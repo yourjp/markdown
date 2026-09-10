@@ -1,0 +1,297 @@
+@import "tailwindcss";
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #3b82f6;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #60a5fa;
+}
+
+/* ☀️ Light Mode: Pure White Background (#ffffff) & 100% Solid Black Text/Borders (#000000) */
+html:not(.dark) body,
+html:not(.dark) main,
+html:not(.dark) aside,
+html:not(.dark) .markdown-body {
+  background-color: #ffffff !important;
+  color: #000000;
+}
+
+/* TOC Light Mode explicit styling */
+html:not(.dark) .toc-header-text {
+  color: #000000 !important;
+}
+
+html:not(.dark) .toc-item-text {
+  color: #000000 !important;
+  background-color: transparent;
+}
+
+html:not(.dark) .toc-item-text:hover {
+  color: #ffffff !important;
+  background-color: #1e3a8a !important; /* Deep Blue button on hover */
+}
+
+html:not(.dark) .toc-item-active {
+  color: #ffffff !important;
+  background-color: #1e3a8a !important; /* Deep Blue button when active */
+}
+
+.markdown-body {
+  color: #000000;
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  color: #000000;
+  font-weight: 700;
+}
+
+.markdown-body h1 {
+  font-size: 2em;
+  border-bottom: 2px solid #000000;
+  padding-bottom: 0.3em;
+  margin-top: 1.5em;
+  margin-bottom: 0.8em;
+}
+
+.markdown-body h2 {
+  font-size: 1.5em;
+  border-bottom: 1px solid #000000;
+  padding-bottom: 0.2em;
+  margin-top: 1.4em;
+  margin-bottom: 0.6em;
+}
+
+.markdown-body h3 {
+  font-size: 1.25em;
+  margin-top: 1.2em;
+  margin-bottom: 0.5em;
+}
+
+.markdown-body h4 {
+  font-size: 1em;
+  margin-top: 1em;
+  margin-bottom: 0.4em;
+}
+
+.markdown-body p,
+.markdown-body span,
+.markdown-body div,
+.markdown-body li,
+.markdown-body ul,
+.markdown-body ol {
+  line-height: 1.7;
+  color: #000000;
+}
+
+.markdown-body strong,
+.markdown-body b {
+  color: #000000;
+  font-weight: 700;
+}
+
+.markdown-body ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.markdown-body ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin-bottom: 1em;
+}
+
+.markdown-body li {
+  margin-bottom: 0.3em;
+}
+
+.markdown-body blockquote {
+  border-left: 4px solid #000000;
+  background-color: #ffffff !important;
+  padding: 0.8em 1em;
+  color: #000000;
+  margin-bottom: 1em;
+  border: 1px solid #000000;
+  border-left-width: 4px;
+}
+
+.markdown-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1em;
+  border: 1px solid #000000;
+  background-color: #ffffff !important;
+}
+
+.markdown-body th, .markdown-body td {
+  border: 1px solid #000000;
+  padding: 8px 12px;
+  text-align: left;
+  color: #000000;
+  background-color: #ffffff !important;
+}
+
+.markdown-body th {
+  background-color: #ffffff !important;
+  color: #000000;
+  font-weight: 700;
+}
+
+.markdown-body code:not(pre code) {
+  background-color: #ffffff !important;
+  color: #000000;
+  border: 1px solid #000000;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  font-weight: 600;
+}
+
+.markdown-body a {
+  color: #000000;
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+.markdown-body mark {
+  background-color: #000000;
+  color: #ffffff;
+  padding: 2px 6px;
+  border-radius: 2px;
+}
+
+.markdown-body hr {
+  border-color: #000000;
+}
+
+/* 🌙 Dark Mode: Rich Deep Blue Background & Distinct Blue Typography */
+html.dark body,
+html.dark main,
+html.dark aside,
+html.dark .markdown-body {
+  background-color: #0f172a !important; /* Deep Blue Slate Background */
+  color: #f8fafc;
+}
+
+/* TOC Dark Mode explicit styling */
+html.dark .toc-header-text {
+  color: #93c5fd !important; /* Light Sky Blue */
+}
+
+html.dark .toc-item-text {
+  color: #f8fafc !important; /* Crisp White Text */
+  background-color: transparent;
+}
+
+html.dark .toc-item-text:hover {
+  color: #ffffff !important;
+  background-color: #334155 !important;
+}
+
+html.dark .toc-item-active {
+  color: #ffffff !important;
+  background-color: #2563eb !important; /* Bright Blue active button */
+}
+
+.dark .markdown-body {
+  color: #f8fafc;
+}
+
+.dark .markdown-body h1 {
+  color: #93c5fd;
+  border-bottom: 2px solid #3b82f6;
+}
+
+.dark .markdown-body h2 {
+  color: #60a5fa;
+  border-bottom: 1px solid #1e40af;
+}
+
+.dark .markdown-body h3, 
+.dark .markdown-body h4 {
+  color: #93c5fd;
+}
+
+.dark .markdown-body p, 
+.dark .markdown-body ul, 
+.dark .markdown-body ol, 
+.dark .markdown-body li, 
+.dark .markdown-body span {
+  color: #f8fafc;
+}
+
+.dark .markdown-body strong {
+  color: #ffffff;
+}
+
+.dark .markdown-body blockquote {
+  border-left: 4px solid #3b82f6;
+  background-color: #1e293b !important;
+  color: #93c5fd;
+  border-radius: 0 6px 6px 0;
+}
+
+/* Deep Blue Table & Table Cells in Dark Mode */
+.dark .markdown-body table {
+  border: 1px solid #3b82f6;
+  background-color: #1e293b !important;
+}
+
+.dark .markdown-body th, 
+.dark .markdown-body td {
+  border: 1px solid #334155;
+  color: #f8fafc;
+  background-color: #1e293b !important;
+}
+
+.dark .markdown-body th {
+  background-color: #0f172a !important;
+  color: #93c5fd;
+  font-weight: 700;
+  border-bottom: 2px solid #3b82f6;
+}
+
+.dark .markdown-body code:not(pre code) {
+  background-color: #1e293b !important;
+  color: #60a5fa;
+  border: 1px solid #3b82f6;
+}
+
+.dark .markdown-body a {
+  color: #60a5fa;
+}
+
+.dark .markdown-body hr {
+  border-color: #3b82f6;
+}
+
+.dark .markdown-body mark {
+  background-color: #1d4ed8;
+  color: #ffffff;
+}
