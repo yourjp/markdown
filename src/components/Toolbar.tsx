@@ -196,7 +196,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="hidden md:flex items-center space-x-2 pl-2 border-l border-gray-600 truncate max-w-sm">
           <span className="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shadow-2xs shrink-0">
-            v1.4.2
+            v1.7.9
           </span>
           <span className="text-sm font-bold text-gray-200 truncate">
             {fileName || "문서를 선택하세요"}
@@ -209,37 +209,32 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       </div>
 
-      {/* Unified Single Toggle Cycle Button (Source -> Edit -> Inline -> View -> Split -> Source ...) */}
-      {(() => {
-        const modes: { mode: ViewMode; icon: React.ReactNode; label: string; desc: string }[] = [
-          { mode: 'source', icon: <Code size={16} />, label: 'Source', desc: '소스 전용' },
-          { mode: 'edit', icon: <Edit3 size={16} />, label: 'Edit', desc: '실시간 편집' },
-          { mode: 'inline', icon: <Edit2 size={16} />, label: 'Inline', desc: '인라인 편집' },
-          { mode: 'view', icon: <Eye size={16} />, label: 'View', desc: '뷰 렌더링' },
-          { mode: 'split', icon: <Columns size={16} />, label: 'Split', desc: '분할 뷰' },
-        ];
-        const currentIndex = modes.findIndex((m) => m.mode === viewMode);
-        const currentModeObj = modes[currentIndex >= 0 ? currentIndex : 0];
-
-        const handleNextMode = () => {
-          const nextIndex = (currentIndex + 1) % modes.length;
-          onToggleViewMode(modes[nextIndex].mode);
-        };
-
-        return (
-          <div className="flex items-center bg-gray-700 p-0.5 rounded-lg border border-gray-600 shadow-sm">
+      {/* All 5 Modes Displayed as Compact Icon Buttons */}
+      <div className="flex items-center bg-gray-900/60 p-1 rounded-lg border border-gray-700/80 shadow-inner space-x-1 shrink-0">
+        {[
+          { mode: 'source' as ViewMode, icon: <Code size={16} />, label: 'Source', desc: '소스 전용' },
+          { mode: 'edit' as ViewMode, icon: <Edit3 size={16} />, label: 'Edit', desc: '실시간 분할 편집' },
+          { mode: 'inline' as ViewMode, icon: <Edit2 size={16} />, label: 'Inline', desc: '인라인 즉시 편집' },
+          { mode: 'view' as ViewMode, icon: <Eye size={16} />, label: 'View', desc: '뷰 렌더링 독서' },
+          { mode: 'split' as ViewMode, icon: <Columns size={16} />, label: 'Split', desc: '분할 비교 뷰' },
+        ].map((item) => {
+          const isActive = viewMode === item.mode;
+          return (
             <button
-              onClick={handleNextMode}
-              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold bg-gray-800 text-blue-400 rounded-md border border-gray-600 hover:bg-gray-750 transition-all hover:scale-105 active:scale-95 cursor-pointer"
-              title={`현재 모드: ${currentModeObj.label} (${currentModeObj.desc}) - 클릭 시 다음 모드로 순환`}
+              key={item.mode}
+              onClick={() => onToggleViewMode(item.mode)}
+              title={`${item.label} 모드 (${item.desc})`}
+              className={`p-1.5 rounded-md transition-all flex items-center justify-center cursor-pointer ${
+                isActive
+                  ? 'bg-blue-600 text-white font-bold shadow-sm ring-1 ring-blue-400 scale-105'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-gray-700/80'
+              }`}
             >
-              {currentModeObj.icon}
-              <span className="font-bold">{currentModeObj.label}</span>
-              <span className="text-[10px] text-gray-400 font-normal hidden sm:inline">({currentModeObj.desc})</span>
+              {item.icon}
             </button>
-          </div>
-        );
-      })()}
+          );
+        })}
+      </div>
 
       {/* Right controls */}
       <div className="flex items-center space-x-2">

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowUp, ArrowDown, Highlighter, Keyboard, X, GripHorizontal, Code, Edit3, Edit2, Eye, Columns, Layers, Plus } from 'lucide-react';
+import { ArrowUp, ArrowDown, Highlighter, CheckSquare, Keyboard, X, GripHorizontal, Code, Edit3, Edit2, Eye, Columns, Layers, Plus } from 'lucide-react';
 import { ViewMode } from '../types';
 
 interface FloatingMenuProps {
@@ -7,8 +7,12 @@ interface FloatingMenuProps {
   onScrollToBottom: () => void;
   isHighlightMode: boolean;
   onToggleHighlightMode: () => void;
+  isTaskMode: boolean;
+  onToggleTaskMode: () => void;
+  onConvertSelectionToTask?: () => void;
   viewMode: ViewMode;
   onNextViewMode: () => void;
+  onSwitchToViewMode: () => void;
 }
 
 export const FloatingMenu: React.FC<FloatingMenuProps> = ({
@@ -16,8 +20,12 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
   onScrollToBottom,
   isHighlightMode,
   onToggleHighlightMode,
+  isTaskMode,
+  onToggleTaskMode,
+  onConvertSelectionToTask,
   viewMode,
   onNextViewMode,
+  onSwitchToViewMode,
 }) => {
   const [menuExpanded, setMenuExpanded] = useState<boolean>(false);
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
@@ -68,13 +76,27 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
           }`}
         >
           <button
+            onClick={onSwitchToViewMode}
+            className={`p-3 rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center border cursor-pointer relative group ${
+              viewMode === 'view'
+                ? 'bg-emerald-600 text-white border-emerald-400 ring-2 ring-emerald-300'
+                : 'bg-slate-800 hover:bg-slate-700 text-emerald-400 border-slate-700'
+            }`}
+            title="View(독서/렌더링) 모드로 즉시 전환"
+          >
+            <Eye size={20} />
+            <span className="absolute right-full mr-2 px-2 py-1 bg-slate-900 text-emerald-300 text-[10px] font-bold rounded shadow whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              View 모드로 즉시 전환
+            </span>
+          </button>
+          <button
             onClick={onNextViewMode}
             className="p-3 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center border border-slate-700 relative group cursor-pointer"
             title={`보기 모드 순환 전환 (현재: ${currentModeInfo.label})`}
           >
             {currentModeInfo.icon}
             <span className="absolute right-full mr-2 px-2 py-1 bg-slate-900 text-amber-300 text-[10px] font-bold rounded shadow whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-              {currentModeInfo.label} 모드
+              {currentModeInfo.label} 모드 (순환)
             </span>
           </button>
           <button
@@ -88,9 +110,33 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
           >
             <Keyboard size={20} />
           </button>
+          {/* Checkbox Creation Floating Button */}
+          <button
+            onClick={() => {
+              if (onConvertSelectionToTask) {
+                onConvertSelectionToTask();
+              }
+              onToggleTaskMode();
+            }}
+            className={`p-3 text-white rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center cursor-pointer relative group ${
+              isTaskMode
+                ? 'bg-indigo-600 ring-4 ring-indigo-300 dark:ring-indigo-900 animate-pulse'
+                : 'bg-slate-800 hover:bg-slate-700 border border-slate-700'
+            }`}
+            title={
+              isTaskMode
+                ? '체크박스 생성 모드 켜짐 (문장 선택 시 체크박스 생성)'
+                : '체크박스 만들기 (선택된 문장 앞에 [- ] 체크박스 생성)'
+            }
+          >
+            <CheckSquare size={20} className={isTaskMode ? 'text-white' : 'text-indigo-400'} />
+            <span className="absolute right-full mr-2 px-2 py-1 bg-slate-900 text-indigo-300 text-[10px] font-bold rounded shadow whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              체크박스 만들기
+            </span>
+          </button>
           <button
             onClick={onToggleHighlightMode}
-            className={`p-3 text-white rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center cursor-pointer ${
+            className={`p-3 text-white rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center cursor-pointer relative group ${
               isHighlightMode
                 ? 'bg-pink-600 ring-4 ring-pink-300 dark:ring-pink-900 animate-pulse'
                 : 'bg-slate-800 hover:bg-slate-700 border border-slate-700'
@@ -98,6 +144,9 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
             title={isHighlightMode ? '형광펜 모드 켜짐 (드래그 시 칠해짐)' : '형광펜 모드 켜기 (버튼 누른 후 텍스트 드래그)'}
           >
             <Highlighter size={20} className={isHighlightMode ? 'text-white' : 'text-pink-400'} />
+            <span className="absolute right-full mr-2 px-2 py-1 bg-slate-900 text-pink-300 text-[10px] font-bold rounded shadow whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              형광펜 모드
+            </span>
           </button>
           <button
             onClick={onScrollToTop}
@@ -190,8 +239,30 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
             </div>
 
             <div>
+              <h4 className="text-blue-600 font-bold text-[11px] mb-1.5 uppercase tracking-wider">Inline / Line Editing (인라인 & 라인 편집)</h4>
+              <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs col-span-2 bg-rose-50/40 border-rose-200">
+                  <span className="text-rose-900 font-bold">줄 전체 삭제</span>
+                  <span className="text-rose-600 font-bold bg-white px-1.5 py-0.5 rounded border border-rose-300 shadow-2xs">Ctrl + Shift + K  /  Ctrl + D</span>
+                </div>
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
+                  <span className="text-gray-900 font-bold">새 빈 줄 삽입</span>
+                  <span className="text-teal-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + Enter</span>
+                </div>
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
+                  <span className="text-gray-900 font-bold">이전/다음 줄 이동</span>
+                  <span className="text-teal-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Enter / Shift+Enter</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
               <h4 className="text-blue-600 font-bold text-[11px] mb-1.5 uppercase tracking-wider">Block & Structure (블록 / 구조 서식)</h4>
               <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
+                  <span className="text-gray-900 font-bold">체크박스 목록</span>
+                  <span className="text-teal-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + T</span>
+                </div>
                 <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
                   <span className="text-gray-900 font-bold">제목 H1, H2, H3</span>
                   <span className="text-teal-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + 1~3</span>
@@ -225,6 +296,18 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
                 <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
                   <span className="text-gray-900 font-bold">검색 창 토글</span>
                   <span className="text-amber-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + F</span>
+                </div>
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs col-span-2 bg-slate-50/60 border-slate-300">
+                  <span className="text-slate-900 font-bold">모드 해제 (형광펜/체크박스/검색)</span>
+                  <span className="text-slate-700 font-bold bg-white px-1.5 py-0.5 rounded border border-slate-300 shadow-2xs">Esc</span>
+                </div>
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
+                  <span className="text-gray-900 font-bold">확대 / 축소</span>
+                  <span className="text-amber-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + (+ / -)</span>
+                </div>
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
+                  <span className="text-gray-900 font-bold">확대율 100% 리셋</span>
+                  <span className="text-amber-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + 0</span>
                 </div>
               </div>
             </div>

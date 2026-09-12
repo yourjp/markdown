@@ -37,6 +37,74 @@ export const MarkdownInlineView = forwardRef<HTMLDivElement, MarkdownInlineViewP
       setEditingIndex(null);
     };
 
+    const handleCommitAndGoNext = (index: number) => {
+      const updatedLines = [...lines];
+      updatedLines[index] = editValue;
+
+      // If at the last line, append a new empty line
+      if (index === lines.length - 1) {
+        updatedLines.push('');
+      }
+
+      const nextIndex = index + 1;
+      onChangeMarkdown(updatedLines.join('\n'));
+      setEditingIndex(nextIndex);
+      setEditValue(updatedLines[nextIndex] || '');
+    };
+
+    const handleCommitAndGoPrev = (index: number) => {
+      if (index <= 0) return;
+      const updatedLines = [...lines];
+      updatedLines[index] = editValue;
+
+      const prevIndex = index - 1;
+      onChangeMarkdown(updatedLines.join('\n'));
+      setEditingIndex(prevIndex);
+      setEditValue(updatedLines[prevIndex] || '');
+    };
+
+    // Insert a new empty line below current line
+    const handleInsertEmptyLineAfter = (index: number) => {
+      const updatedLines = [...lines];
+      updatedLines[index] = editValue;
+      updatedLines.splice(index + 1, 0, '');
+
+      const nextIndex = index + 1;
+      onChangeMarkdown(updatedLines.join('\n'));
+      setEditingIndex(nextIndex);
+      setEditValue('');
+    };
+
+    // Insert a new empty line above current line
+    const handleInsertEmptyLineBefore = (index: number) => {
+      const updatedLines = [...lines];
+      updatedLines[index] = editValue;
+      updatedLines.splice(index, 0, '');
+
+      onChangeMarkdown(updatedLines.join('\n'));
+      setEditingIndex(index);
+      setEditValue('');
+    };
+
+    // Delete current line completely
+    const handleDeleteLine = (index: number) => {
+      if (lines.length <= 1) {
+        // If it's the only line, clear it
+        onChangeMarkdown('');
+        setEditingIndex(0);
+        setEditValue('');
+        return;
+      }
+
+      const updatedLines = [...lines];
+      updatedLines.splice(index, 1);
+
+      const targetIndex = Math.min(index, updatedLines.length - 1);
+      onChangeMarkdown(updatedLines.join('\n'));
+      setEditingIndex(targetIndex);
+      setEditValue(updatedLines[targetIndex] || '');
+    };
+
     const applyFormatting = (inputEl: HTMLInputElement | HTMLTextAreaElement, prefix: string, suffix: string = prefix) => {
       const start = inputEl.selectionStart || 0;
       const end = inputEl.selectionEnd || 0;
@@ -77,10 +145,17 @@ export const MarkdownInlineView = forwardRef<HTMLDivElement, MarkdownInlineViewP
       if (isCmdOrCtrl) {
         const key = e.key.toLowerCase();
         
-        // 0. Remove All Formatting Shortcut: Ctrl+0 or Ctrl+\ or Ctrl+Shift+K
-        if (e.key === '0' || e.key === '\\' || (key === 'k' && e.shiftKey)) {
+        // 0. Remove All Formatting Shortcut: Ctrl+0 or Ctrl+\
+        if (e.key === '0' || e.key === '\\') {
           e.preventDefault();
           removeAllFormatting();
+          return;
+        }
+
+        // 0.1 Delete Current Line Shortcut: Ctrl+Shift+K or Ctrl+D
+        if ((key === 'k' && e.shiftKey) || (key === 'd' && !e.shiftKey)) {
+          e.preventDefault();
+          handleDeleteLine(index);
           return;
         }
 
@@ -130,6 +205,11 @@ export const MarkdownInlineView = forwardRef<HTMLDivElement, MarkdownInlineViewP
           e.preventDefault();
           applyFormatting(e.currentTarget, '[', '](https://)');
           return;
+        } else if (key === 't') {
+          // Task List Item: - [ ] text
+          e.preventDefault();
+          applyLinePrefix('- [ ] ');
+          return;
         } else if (key === 'l') {
           // List Item: - text
           e.preventDefault();
@@ -140,13 +220,43 @@ export const MarkdownInlineView = forwardRef<HTMLDivElement, MarkdownInlineViewP
           e.preventDefault();
           applyLinePrefix('> ');
           return;
+        } else if (e.key === 'Enter') {
+          // Ctrl+Enter: Insert new blank line below
+          e.preventDefault();
+          if (e.shiftKey) {
+            handleInsertEmptyLineBefore(index);
+          } else {
+            handleInsertEmptyLineAfter(index);
+          }
+          return;
         }
       }
 
       if (e.key === 'Escape') {
         setEditingIndex(null);
-      } else if (e.key === 'Enter' && !e.shiftKey) {
-        handleCommit(index);
+      } else if (e.key === 'Backspace' && editValue === '') {
+        // Backspace on empty line deletes the line
+        e.preventDefault();
+        handleDeleteLine(index);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleCommitAndGoPrev(index);
+        } else {
+          handleCommitAndGoNext(index);
+        }
+      } else if (e.key === 'ArrowUp') {
+        const inputEl = e.currentTarget;
+        if (inputEl.selectionStart === 0 && inputEl.selectionEnd === 0) {
+          e.preventDefault();
+          handleCommitAndGoPrev(index);
+        }
+      } else if (e.key === 'ArrowDown') {
+        const inputEl = e.currentTarget;
+        if (inputEl.selectionStart === editValue.length && inputEl.selectionEnd === editValue.length) {
+          e.preventDefault();
+          handleCommitAndGoNext(index);
+        }
       }
     };
 
@@ -166,22 +276,6 @@ export const MarkdownInlineView = forwardRef<HTMLDivElement, MarkdownInlineViewP
         className="h-full overflow-y-auto p-8 lg:p-12 markdown-body bg-white dark:bg-gray-900 transition-all"
         style={{ fontSize: `${zoomLevel * 100}%` }}
       >
-        <div className="mb-4 pb-2 border-b border-gray-200 dark:border-gray-800 text-xs font-semibold text-gray-700 dark:text-gray-300 flex flex-col md:flex-row md:items-center justify-between gap-1.5 select-none">
-          <span>✨ <strong>Inline Mode</strong>: 요소 클릭 시 즉시 편집 (Enter: 저장, Esc: 취소)</span>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-gray-500 dark:text-gray-400">
-            <span title="제목 레벨 1~3">Ctrl+1~3: H1~H3</span>
-            <span title="서식 제거">Ctrl+0: 서식 지우기</span>
-            <span title="서식">Ctrl+B: 굵게</span>
-            <span title="서식">Ctrl+I: 기울임</span>
-            <span title="서식">Ctrl+H: 형광펜</span>
-            <span title="서식">Ctrl+Shift+X: 취소선</span>
-            <span title="목록">Ctrl+L: 리스트</span>
-            <span title="인용구">Ctrl+Q: 인용구</span>
-            <span title="인라인 코드">Ctrl+E: 코드</span>
-            <span title="링크">Ctrl+K: 링크</span>
-          </div>
-        </div>
-
         {lines.map((line, idx) => {
           const isEditing = editingIndex === idx;
 

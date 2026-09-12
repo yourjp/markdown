@@ -72,15 +72,17 @@ Windows 환경에서 로컬 Markdown 문서를 빠르고 편리하게 열람할 
 - 스크롤을 내릴 때 현재 읽고 있는 섹션이 목차에서 **자동 강조**됩니다.
 - **\`Ctrl + B\`** 또는 툴바의 버튼을 눌러 목차 패널을 토글할 수 있습니다.
 
-### 3.4 키보드 단축키 모음
-| 기능 | 단축키 |
-|---|---|
-| 파일 열기 | \`Ctrl + O\` |
-| 목차 열기/닫기 | \`Ctrl + B\` |
-| 검색 창 토글 | \`Ctrl + F\` |
-| 본문 확대 | \`Ctrl + +\` |
-| 본문 축소 | \`Ctrl + -\` |
-| 확대율 리셋 | \`Ctrl + 0\` |
+### 3.5 할 일 목록 (Task List 체크박스 1-클릭 테스트)
+- [ ] 아침 운동하기 (30분 산책)
+- [x] 메일함 확인 및 중요 메일 회신
+- [ ] Markdown 앱 체크박스 클릭 테스트 수행
+- [x] 프로젝트 의존성 모듈 버전 점검
+- [ ] 오후 팀 주간 회의 참석
+
+* [ ] 별표 기호 체크박스 미완료 항목
+* [x] 별표 기호 체크박스 완료 항목
++ [ ] 플러스 기호 체크박스 미완료 항목
++ [x] 플러스 기호 체크박스 완료 항목
 `;
 
 export function App() {
@@ -438,6 +440,9 @@ export function App() {
     URL.revokeObjectURL(url);
   };
 
+  const [isHighlightMode, setIsHighlightMode] = useState<boolean>(false);
+  const [isTaskMode, setIsTaskMode] = useState<boolean>(false);
+
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -452,6 +457,9 @@ export function App() {
           } else {
             handleSaveFile();
           }
+        } else if (e.key.toLowerCase() === 't') {
+          e.preventDefault();
+          handleConvertSelectionToTask();
         } else if (e.key.toLowerCase() === 'b') {
           e.preventDefault();
           setTocOpen((prev) => !prev);
@@ -468,16 +476,172 @@ export function App() {
           e.preventDefault();
           setZoomLevel(1.0);
         }
-      } else if (e.key === 'Escape' && searchOpen) {
-        setSearchOpen(false);
+      } else if (e.key === 'Escape') {
+        if (searchOpen) {
+          setSearchOpen(false);
+        }
+        setIsHighlightMode(false);
+        setIsTaskMode(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchOpen, markdown, fileName]);
+  }, [searchOpen, isHighlightMode, isTaskMode, markdown, fileName]);
 
-  const [isHighlightMode, setIsHighlightMode] = useState<boolean>(false);
+  // Helper function to escape regex special chars
+  const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Convert current selection or specified target line to a Task list checkbox item (- [ ] text)
+  const handleConvertSelectionToTask = () => {
+    // 1. Textarea in Edit / Split / Source mode handling
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.tagName === 'TEXTAREA') {
+      const textarea = activeEl as HTMLTextAreaElement;
+      const start = textarea.selectionStart;
+      const end = textarea.selectionEnd;
+      const val = textarea.value;
+
+      // Find start of line and end of line
+      const lineStart = val.lastIndexOf('\n', start - 1) + 1;
+      let lineEnd = val.indexOf('\n', end);
+      if (lineEnd === -1) lineEnd = val.length;
+
+      const fullLine = val.substring(lineStart, lineEnd);
+      // Toggle or apply task prefix
+      const taskMatch = fullLine.match(/^([ \t]*)(?:[\-\*\+]\s+\[[\sxX]\]\s+|[\-\*\+]\s+|\d+\.\s+|>+\s+|#+\s+)?(.*)$/);
+      let newLine = fullLine;
+      if (taskMatch) {
+        const indent = taskMatch[1] || '';
+        const rest = taskMatch[2] || '';
+        // If already a task list item, remove or toggle
+        if (/^[ \t]*[\-\*\+]\s+\[[\sxX]\]/.test(fullLine)) {
+          newLine = `${indent}${rest}`;
+        } else {
+          newLine = `${indent}- [ ] ${rest}`;
+        }
+      } else {
+        newLine = `- [ ] ${fullLine}`;
+      }
+
+      const newVal = val.substring(0, lineStart) + newLine + val.substring(lineEnd);
+      updateMarkdown(newVal);
+      return;
+    }
+
+    // 2. DOM Selection handling (View, Inline, Split rendered view)
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed) return;
+
+    const rawSelectedText = selection.toString();
+    if (!rawSelectedText || !rawSelectedText.trim()) return;
+
+    const selectedText = rawSelectedText.replace(/\r?\n/g, ' ').trim();
+    if (!selectedText) return;
+
+    const anchorNode = selection.anchorNode;
+    if (!anchorNode) return;
+
+    // Detect target line index from DOM data attributes
+    let element: HTMLElement | null = anchorNode.nodeType === Node.ELEMENT_NODE ? (anchorNode as HTMLElement) : anchorNode.parentElement;
+    let targetLineIndex: number | null = null;
+    while (element && element !== document.body) {
+      if (element.hasAttribute('data-line-index')) {
+        targetLineIndex = parseInt(element.getAttribute('data-line-index')!, 10);
+        break;
+      }
+      element = element.parentElement;
+    }
+
+    const lines = markdown.split('\n');
+    let replaced = false;
+
+    // A. If targetLineIndex is found, convert that specific line
+    if (targetLineIndex !== null && targetLineIndex >= 0 && targetLineIndex < lines.length) {
+      const line = lines[targetLineIndex];
+      const match = line.match(/^([ \t]*)(?:[\-\*\+]\s+\[[\sxX]\]\s+|[\-\*\+]\s+|\d+\.\s+|>+\s+|#+\s+)?(.*)$/);
+      if (match) {
+        const indent = match[1] || '';
+        const rest = match[2] || '';
+        if (/^[ \t]*[\-\*\+]\s+\[[\sxX]\]/.test(line)) {
+          lines[targetLineIndex] = `${indent}${rest}`;
+        } else {
+          lines[targetLineIndex] = `${indent}- [ ] ${rest}`;
+        }
+        replaced = true;
+      }
+    }
+
+    // B. Search for the line containing the selected text
+    if (!replaced) {
+      const cleanSelectedStr = selectedText.replace(/[\s\.\,\;\:\!\?]+$/, '').trim();
+      const parentText = anchorNode.parentElement?.textContent || '';
+      const cleanParent = parentText.replace(/\r?\n/g, ' ').trim();
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const cleanLine = line.replace(/\*\*|\*|~~|`|<mark>|<\/mark>|\[|\]|\([^)]+\)/g, '');
+
+        if (cleanLine.includes(cleanSelectedStr) && (cleanParent === '' || cleanLine.includes(cleanParent.slice(0, 8)))) {
+          const match = line.match(/^([ \t]*)(?:[\-\*\+]\s+\[[\sxX]\]\s+|[\-\*\+]\s+|\d+\.\s+|>+\s+|#+\s+)?(.*)$/);
+          if (match) {
+            const indent = match[1] || '';
+            const rest = match[2] || '';
+            if (/^[ \t]*[\-\*\+]\s+\[[\sxX]\]/.test(line)) {
+              lines[i] = `${indent}${rest}`;
+            } else {
+              lines[i] = `${indent}- [ ] ${rest}`;
+            }
+            replaced = true;
+            break;
+          }
+        }
+      }
+    }
+
+    // C. Fallback: First line containing cleanSelectedStr
+    if (!replaced) {
+      const cleanSelectedStr = selectedText.replace(/[\s\.\,\;\:\!\?]+$/, '').trim();
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].includes(cleanSelectedStr)) {
+          const match = lines[i].match(/^([ \t]*)(?:[\-\*\+]\s+\[[\sxX]\]\s+|[\-\*\+]\s+|\d+\.\s+|>+\s+|#+\s+)?(.*)$/);
+          if (match) {
+            const indent = match[1] || '';
+            const rest = match[2] || '';
+            if (/^[ \t]*[\-\*\+]\s+\[[\sxX]\]/.test(lines[i])) {
+              lines[i] = `${indent}${rest}`;
+            } else {
+              lines[i] = `${indent}- [ ] ${rest}`;
+            }
+            replaced = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (replaced) {
+      updateMarkdown(lines.join('\n'));
+      selection.removeAllRanges();
+    }
+  };
+
+  // Auto create checkbox when text is selected and isTaskMode is active
+  useEffect(() => {
+    if (!isTaskMode) return;
+
+    const handleMouseUp = () => {
+      handleConvertSelectionToTask();
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('touchend', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('touchend', handleMouseUp);
+    };
+  }, [isTaskMode, markdown]);
 
   // Auto highlight selected text when highlight mode is enabled
   useEffect(() => {
@@ -537,9 +701,6 @@ export function App() {
         }
         element = element.parentElement;
       }
-
-      // Helper function to escape regex special chars
-      const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
       // 1. 드래그 선택 범위 안에 기존 ==형광펜== 마크다운 태그가 포함되어 있는지 확인하여 해제
       const highlightTagRegex = /==([\s\S]+?)==/g;
@@ -653,6 +814,46 @@ export function App() {
       document.removeEventListener('touchend', handleMouseUp);
     };
   }, [isHighlightMode, markdown]);
+
+  // Handle Interactive Task List Item Checkbox Click (View Mode)
+  const handleToggleTaskListItem = (sourceLineIndex: number, targetCheckedState: boolean, textContext?: string) => {
+    const lines = markdown.split('\n');
+    const newCheck = targetCheckedState ? 'x' : ' ';
+    let replaced = false;
+
+    // A. AST 소스 라인 인덱스(sourceLineIndex)가 정확히 전달된 경우: 마크다운 파일의 해당 라인 직접 수정
+    if (sourceLineIndex >= 0 && sourceLineIndex < lines.length) {
+      const line = lines[sourceLineIndex];
+      const match = line.match(/^([ \t]*[\-\*\+]\s+\[)([\s xX])(\].*)$/);
+      if (match) {
+        lines[sourceLineIndex] = `${match[1]}${newCheck}${match[3]}`;
+        replaced = true;
+      }
+    }
+
+    // B. 소스 라인 매칭 실패 시 텍스트 컨텍스트 기반 매칭 fallback
+    if (!replaced && textContext && textContext.trim()) {
+      const cleanContext = textContext.replace(/\r?\n/g, ' ').trim();
+      const firstWord = cleanContext.split(/\s+/)[0] || '';
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const match = line.match(/^([ \t]*[\-\*\+]\s+\[)([\s xX])(\]\s*)(.*)$/);
+        if (match) {
+          const lineText = match[4].replace(/\*\*|\*|~~|`|<mark>|<\/mark>/g, '').trim();
+          if (lineText && (lineText.includes(cleanContext) || cleanContext.includes(lineText) || (firstWord && lineText.includes(firstWord)))) {
+            lines[i] = `${match[1]}${newCheck}${match[3]}${match[4]}`;
+            replaced = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (replaced) {
+      updateMarkdown(lines.join('\n'));
+    }
+  };
 
   // Floating Menu Actions
   const handleScrollToTop = () => {
@@ -779,6 +980,7 @@ export function App() {
                   markdown={markdown}
                   zoomLevel={zoomLevel}
                   searchQuery={searchQuery}
+                  onToggleTaskListItem={handleToggleTaskListItem}
                 />
               </div>
             </div>
@@ -844,6 +1046,7 @@ export function App() {
                   zoomLevel={zoomLevel}
                   searchQuery={searchQuery}
                   onScroll={handleViewScroll}
+                  onToggleTaskListItem={handleToggleTaskListItem}
                 />
               </div>
             </div>
@@ -854,6 +1057,7 @@ export function App() {
                 markdown={markdown}
                 zoomLevel={zoomLevel}
                 searchQuery={searchQuery}
+                onToggleTaskListItem={handleToggleTaskListItem}
               />
             </div>
           )}
@@ -864,7 +1068,16 @@ export function App() {
         onScrollToTop={handleScrollToTop}
         onScrollToBottom={handleScrollToBottom}
         isHighlightMode={isHighlightMode}
-        onToggleHighlightMode={() => setIsHighlightMode((prev) => !prev)}
+        onToggleHighlightMode={() => {
+          setIsHighlightMode((prev) => !prev);
+          if (!isHighlightMode) setIsTaskMode(false);
+        }}
+        isTaskMode={isTaskMode}
+        onToggleTaskMode={() => {
+          setIsTaskMode((prev) => !prev);
+          if (!isTaskMode) setIsHighlightMode(false);
+        }}
+        onConvertSelectionToTask={handleConvertSelectionToTask}
         viewMode={viewMode}
         onNextViewMode={() => {
           const modes: ViewMode[] = ['source', 'edit', 'inline', 'view', 'split'];
@@ -872,6 +1085,7 @@ export function App() {
           const nextIndex = (currentIndex + 1) % modes.length;
           setViewMode(modes[nextIndex]);
         }}
+        onSwitchToViewMode={() => setViewMode('view')}
       />
     </div>
   );
