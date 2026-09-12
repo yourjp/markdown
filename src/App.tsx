@@ -642,15 +642,16 @@ export function App() {
         setMarkdown(updatedMarkdown);
         selection.removeAllRanges();
       }
-
-      if (replaced) {
-        setMarkdown(updatedMarkdown);
-        selection.removeAllRanges();
-      }
     };
 
+    // 아이패드 Safari 애플펜슬 및 터치 디바이스 호환성 지원 (mouseup + touchend + selectionchange)
     document.addEventListener('mouseup', handleMouseUp);
-    return () => document.removeEventListener('mouseup', handleMouseUp);
+    document.addEventListener('touchend', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('touchend', handleMouseUp);
+    };
   }, [isHighlightMode, markdown]);
 
   // Floating Menu Actions

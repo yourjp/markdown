@@ -108,40 +108,36 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <button
           onClick={onOpenFile}
-          className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 bg-blue-900/40 hover:bg-blue-900/60 text-blue-400 text-xs sm:text-sm font-bold rounded-lg transition-colors border border-blue-800/40"
+          className="p-2 bg-blue-900/40 hover:bg-blue-900/60 text-blue-400 rounded-lg transition-colors border border-blue-800/40 flex items-center justify-center"
           title="로컬 Markdown 파일 열기 (Ctrl+O)"
         >
           <FolderOpen size={18} />
-          <span className="hidden md:inline">Open</span>
         </button>
 
         <button
           onClick={onSaveFile}
-          className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-400 text-xs sm:text-sm font-bold rounded-lg transition-colors border border-emerald-800/40"
+          className="p-2 bg-emerald-900/40 hover:bg-emerald-900/60 text-emerald-400 rounded-lg transition-colors border border-emerald-800/40 flex items-center justify-center"
           title="현재 Markdown 파일 저장 (Ctrl+S)"
         >
           <Save size={18} />
-          <span className="hidden md:inline">Save</span>
         </button>
 
         <button
           onClick={onSaveAsFile}
-          className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 bg-teal-900/40 hover:bg-teal-900/60 text-teal-300 text-xs sm:text-sm font-bold rounded-lg transition-colors border border-teal-800/40"
+          className="p-2 bg-teal-900/40 hover:bg-teal-900/60 text-teal-300 rounded-lg transition-colors border border-teal-800/40 flex items-center justify-center"
           title="버전 업하여 다른 이름으로 저장 (Ctrl+Shift+S)"
         >
           <Download size={18} />
-          <span className="hidden md:inline">Save As</span>
         </button>
 
         {/* Recent Files Dropdown Menu */}
         <div className="relative" ref={dropdownRef}>
           <button
             onClick={() => setDropdownOpen((prev) => !prev)}
-            className="flex items-center space-x-1 sm:space-x-1.5 px-2 sm:px-2.5 py-1.5 bg-gray-700 hover:bg-gray-600 text-gray-200 text-xs font-semibold rounded-lg transition-colors border border-gray-600 shadow-sm"
-            title="최근 열어본 문서 리스트"
+            className="p-2 bg-gray-700 hover:bg-gray-600 text-gray-200 rounded-lg transition-colors border border-gray-600 shadow-sm flex items-center justify-center space-x-1"
+            title={`최근 열어본 문서 리스트 (${recentFiles.length})`}
           >
-            <History size={15} className="text-blue-400" />
-            <span className="hidden sm:inline">Recent ({recentFiles.length})</span>
+            <History size={18} className="text-blue-400" />
             <ChevronDown size={14} className={`transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
           </button>
 
