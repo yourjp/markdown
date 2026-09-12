@@ -20,7 +20,7 @@ export const TableOfContents: React.FC<TableOfContentsProps> = ({
         <span className="font-bold">Table of Contents</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-1">
+      <div className="flex-1 overflow-y-auto p-3 pb-32 space-y-1">
         {headings.length === 0 ? (
           <div className="text-xs italic p-2 text-center toc-item-text">
             표시할 목차가 없습니다

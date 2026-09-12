@@ -196,7 +196,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="hidden md:flex items-center space-x-2 pl-2 border-l border-gray-600 truncate max-w-sm">
           <span className="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shadow-2xs shrink-0">
-            v1.1.1
+            v1.4.2
           </span>
           <span className="text-sm font-bold text-gray-200 truncate">
             {fileName || "문서를 선택하세요"}
@@ -209,15 +209,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       </div>
 
-      {/* Center controls: 5 View Modes (Source / Edit / Inline / View / Source + View) */}
-      {/* Mobile Single Toggle Button (< sm) */}
+      {/* Unified Single Toggle Cycle Button (Source -> Edit -> Inline -> View -> Split -> Source ...) */}
       {(() => {
-        const modes: { mode: ViewMode; icon: React.ReactNode; label: string }[] = [
-          { mode: 'source', icon: <Code size={16} />, label: 'Source' },
-          { mode: 'edit', icon: <Edit3 size={16} />, label: 'Edit' },
-          { mode: 'inline', icon: <Edit2 size={16} />, label: 'Inline' },
-          { mode: 'view', icon: <Eye size={16} />, label: 'View' },
-          { mode: 'split', icon: <Columns size={16} />, label: 'Split' },
+        const modes: { mode: ViewMode; icon: React.ReactNode; label: string; desc: string }[] = [
+          { mode: 'source', icon: <Code size={16} />, label: 'Source', desc: '소스 전용' },
+          { mode: 'edit', icon: <Edit3 size={16} />, label: 'Edit', desc: '실시간 편집' },
+          { mode: 'inline', icon: <Edit2 size={16} />, label: 'Inline', desc: '인라인 편집' },
+          { mode: 'view', icon: <Eye size={16} />, label: 'View', desc: '뷰 렌더링' },
+          { mode: 'split', icon: <Columns size={16} />, label: 'Split', desc: '분할 뷰' },
         ];
         const currentIndex = modes.findIndex((m) => m.mode === viewMode);
         const currentModeObj = modes[currentIndex >= 0 ? currentIndex : 0];
@@ -228,82 +227,19 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         };
 
         return (
-          <div className="flex sm:hidden items-center bg-gray-700 p-0.5 rounded-lg">
+          <div className="flex items-center bg-gray-700 p-0.5 rounded-lg border border-gray-600 shadow-sm">
             <button
               onClick={handleNextMode}
-              className="flex items-center space-x-1 px-2 py-1 text-xs font-bold bg-gray-800 text-blue-400 rounded-md shadow-sm border border-gray-600 hover:bg-gray-750 transition-colors"
-              title={`현재 모드: ${currentModeObj.label} (클릭 시 다음 모드로 전환)`}
+              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold bg-gray-800 text-blue-400 rounded-md border border-gray-600 hover:bg-gray-750 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+              title={`현재 모드: ${currentModeObj.label} (${currentModeObj.desc}) - 클릭 시 다음 모드로 순환`}
             >
               {currentModeObj.icon}
-              <span>{currentModeObj.label}</span>
+              <span className="font-bold">{currentModeObj.label}</span>
+              <span className="text-[10px] text-gray-400 font-normal hidden sm:inline">({currentModeObj.desc})</span>
             </button>
           </div>
         );
       })()}
-
-      {/* Desktop Buttons (>= sm) */}
-      <div className="hidden sm:flex items-center bg-gray-700 p-1 rounded-lg">
-        <button
-          onClick={() => onToggleViewMode('source')}
-          className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${
-            viewMode === 'source'
-              ? 'bg-gray-800 text-blue-400 shadow-sm'
-              : 'text-gray-300 hover:text-white'
-          }`}
-          title="소스 코드 전용 모드"
-        >
-          <Code size={15} />
-          <span>Source</span>
-        </button>
-        <button
-          onClick={() => onToggleViewMode('edit')}
-          className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${
-            viewMode === 'edit'
-              ? 'bg-gray-800 text-blue-400 shadow-sm'
-              : 'text-gray-300 hover:text-white'
-          }`}
-          title="실시간 편집 (Live Edit) 모드"
-        >
-          <Edit3 size={15} />
-          <span>Edit</span>
-        </button>
-        <button
-          onClick={() => onToggleViewMode('inline')}
-          className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${
-            viewMode === 'inline'
-              ? 'bg-gray-800 text-blue-400 shadow-sm'
-              : 'text-gray-300 hover:text-white'
-          }`}
-          title="인라인 편집 (Inline Edit) 모드"
-        >
-          <Edit2 size={15} />
-          <span>Inline</span>
-        </button>
-        <button
-          onClick={() => onToggleViewMode('view')}
-          className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${
-            viewMode === 'view'
-              ? 'bg-gray-800 text-blue-400 shadow-sm'
-              : 'text-gray-300 hover:text-white'
-          }`}
-          title="View 렌더링 전용 모드"
-        >
-          <Eye size={15} />
-          <span>View</span>
-        </button>
-        <button
-          onClick={() => onToggleViewMode('split')}
-          className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${
-            viewMode === 'split'
-              ? 'bg-gray-800 text-blue-400 shadow-sm'
-              : 'text-gray-300 hover:text-white'
-          }`}
-          title="소스 + View 스플릿 분할 비교 모드"
-        >
-          <Columns size={15} />
-          <span>Source + View</span>
-        </button>
-      </div>
 
       {/* Right controls */}
       <div className="flex items-center space-x-2">

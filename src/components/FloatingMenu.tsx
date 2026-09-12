@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { ArrowUp, ArrowDown, Highlighter, Keyboard, X, GripHorizontal } from 'lucide-react';
+import { ArrowUp, ArrowDown, Highlighter, Keyboard, X, GripHorizontal, Code, Edit3, Edit2, Eye, Columns, Layers, Plus } from 'lucide-react';
+import { ViewMode } from '../types';
 
 interface FloatingMenuProps {
   onScrollToTop: () => void;
   onScrollToBottom: () => void;
   isHighlightMode: boolean;
   onToggleHighlightMode: () => void;
+  viewMode: ViewMode;
+  onNextViewMode: () => void;
 }
 
 export const FloatingMenu: React.FC<FloatingMenuProps> = ({
@@ -13,7 +16,10 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
   onScrollToBottom,
   isHighlightMode,
   onToggleHighlightMode,
+  viewMode,
+  onNextViewMode,
 }) => {
+  const [menuExpanded, setMenuExpanded] = useState<boolean>(false);
   const [helpOpen, setHelpOpen] = useState<boolean>(false);
   const [position, setPosition] = useState<{ x: number; y: number }>(() => {
     // Default top-right position
@@ -42,40 +48,84 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
     window.addEventListener('mouseup', onMouseUp);
   };
 
+  const modeIcons: Record<ViewMode, { icon: React.ReactNode; label: string }> = {
+    source: { icon: <Code size={20} />, label: 'Source' },
+    edit: { icon: <Edit3 size={20} />, label: 'Edit' },
+    inline: { icon: <Edit2 size={20} />, label: 'Inline' },
+    view: { icon: <Eye size={20} />, label: 'View' },
+    split: { icon: <Columns size={20} />, label: 'Split' },
+  };
+
+  const currentModeInfo = modeIcons[viewMode] || modeIcons.view;
+
   return (
     <>
-      <div className="fixed bottom-6 right-6 flex flex-col space-y-2 z-50 select-none">
-        <button
-          onClick={() => setHelpOpen(true)}
-          className="p-3 bg-slate-800 hover:bg-slate-700 text-blue-400 rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center border border-slate-700"
-          title="단축키 도움말 보기"
-        >
-          <Keyboard size={20} />
-        </button>
-        <button
-          onClick={onToggleHighlightMode}
-          className={`p-3 text-white rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center ${
-            isHighlightMode
-              ? 'bg-pink-600 ring-4 ring-pink-300 dark:ring-pink-900 animate-pulse'
-              : 'bg-slate-800 hover:bg-slate-700 border border-slate-700'
+      <div className="fixed bottom-6 right-6 flex flex-col space-y-2 z-50 select-none items-center">
+        {/* Collapsible Action Buttons Group */}
+        <div
+          className={`flex flex-col space-y-2 transition-all duration-300 transform ${
+            menuExpanded ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-4 pointer-events-none'
           }`}
-          title={isHighlightMode ? '형광펜 모드 켜짐 (드래그 시 칠해짐)' : '형광펜 모드 켜기 (버튼 누른 후 텍스트 드래그)'}
         >
-          <Highlighter size={20} className={isHighlightMode ? 'text-white' : 'text-pink-400'} />
-        </button>
+          <button
+            onClick={onNextViewMode}
+            className="p-3 bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center border border-slate-700 relative group cursor-pointer"
+            title={`보기 모드 순환 전환 (현재: ${currentModeInfo.label})`}
+          >
+            {currentModeInfo.icon}
+            <span className="absolute right-full mr-2 px-2 py-1 bg-slate-900 text-amber-300 text-[10px] font-bold rounded shadow whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+              {currentModeInfo.label} 모드
+            </span>
+          </button>
+          <button
+            onClick={() => setHelpOpen((prev) => !prev)}
+            className={`p-3 rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center border cursor-pointer ${
+              helpOpen
+                ? 'bg-blue-600 text-white border-blue-500 ring-2 ring-blue-300'
+                : 'bg-slate-800 hover:bg-slate-700 text-blue-400 border-slate-700'
+            }`}
+            title={helpOpen ? "단축키 도움말 닫기" : "단축키 도움말 보기"}
+          >
+            <Keyboard size={20} />
+          </button>
+          <button
+            onClick={onToggleHighlightMode}
+            className={`p-3 text-white rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center cursor-pointer ${
+              isHighlightMode
+                ? 'bg-pink-600 ring-4 ring-pink-300 dark:ring-pink-900 animate-pulse'
+                : 'bg-slate-800 hover:bg-slate-700 border border-slate-700'
+            }`}
+            title={isHighlightMode ? '형광펜 모드 켜짐 (드래그 시 칠해짐)' : '형광펜 모드 켜기 (버튼 누른 후 텍스트 드래그)'}
+          >
+            <Highlighter size={20} className={isHighlightMode ? 'text-white' : 'text-pink-400'} />
+          </button>
+          <button
+            onClick={onScrollToTop}
+            className="p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center border border-slate-700 cursor-pointer"
+            title="맨 위로 이동"
+          >
+            <ArrowUp size={20} />
+          </button>
+          <button
+            onClick={onScrollToBottom}
+            className="p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center border border-slate-700 cursor-pointer"
+            title="맨 아래로 이동"
+          >
+            <ArrowDown size={20} />
+          </button>
+        </div>
+
+        {/* Primary Master Trigger Button */}
         <button
-          onClick={onScrollToTop}
-          className="p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center border border-slate-700"
-          title="맨 위로 이동"
+          onClick={() => setMenuExpanded((prev) => !prev)}
+          className={`p-3 rounded-full shadow-md backdrop-blur-xs transition-all hover:scale-110 flex items-center justify-center border cursor-pointer ${
+            menuExpanded
+              ? 'bg-blue-600/80 hover:bg-blue-600 text-white border-blue-400/80 rotate-45 ring-2 ring-blue-300/40'
+              : 'bg-slate-900/10 hover:bg-slate-800/80 text-blue-500/60 hover:text-blue-400 border-slate-700/20 hover:border-slate-600'
+          }`}
+          title={menuExpanded ? "메뉴 접기" : "플로팅 메뉴 펼치기"}
         >
-          <ArrowUp size={20} />
-        </button>
-        <button
-          onClick={onScrollToBottom}
-          className="p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-full shadow-lg transition-all hover:scale-110 flex items-center justify-center border border-slate-700"
-          title="맨 아래로 이동"
-        >
-          <ArrowDown size={20} />
+          <Plus size={20} className="transition-transform duration-300" />
         </button>
       </div>
 

@@ -865,6 +865,13 @@ export function App() {
         onScrollToBottom={handleScrollToBottom}
         isHighlightMode={isHighlightMode}
         onToggleHighlightMode={() => setIsHighlightMode((prev) => !prev)}
+        viewMode={viewMode}
+        onNextViewMode={() => {
+          const modes: ViewMode[] = ['source', 'edit', 'inline', 'view', 'split'];
+          const currentIndex = modes.indexOf(viewMode);
+          const nextIndex = (currentIndex + 1) % modes.length;
+          setViewMode(modes[nextIndex]);
+        }}
       />
     </div>
   );
