@@ -198,7 +198,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           )}
         </div>
 
-        <div className="hidden md:flex items-baseline space-x-2 pl-2 border-l border-gray-600 truncate max-w-sm">
+        <div className="hidden md:flex items-center space-x-2 pl-2 border-l border-gray-600 truncate max-w-sm">
+          <span className="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shadow-2xs shrink-0">
+            v1.1.0
+          </span>
           <span className="text-sm font-bold text-gray-200 truncate">
             {fileName || "문서를 선택하세요"}
           </span>
