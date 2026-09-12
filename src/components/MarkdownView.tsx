@@ -15,9 +15,11 @@ interface MarkdownViewProps {
 
 export const MarkdownView = forwardRef<HTMLDivElement, MarkdownViewProps>(
   ({ markdown, zoomLevel, searchQuery, onScroll }, ref) => {
-    const sanitizedMarkdown = markdown.replace(/(^|[^\~])\~([^\~]+)\~([^\~]|$)/g, (match, p1, p2, p3) => {
-      return `${p1}&#126;${p2}&#126;${p3}`;
-    });
+    const sanitizedMarkdown = markdown
+      .replace(/(^|[^\~])\~([^\~]+)\~([^\~]|$)/g, (match, p1, p2, p3) => {
+        return `${p1}&#126;${p2}&#126;${p3}`;
+      })
+      .replace(/==([^=]+)==/g, '<mark>$1</mark>');
 
     const highlightSearchText = (text: string): ReactNode => {
       if (!searchQuery.trim()) return text;

@@ -4,7 +4,7 @@ export interface HeadingItem {
   level: number;
 }
 
-export type ViewMode = 'view' | 'split';
+export type ViewMode = 'source' | 'view' | 'split' | 'edit' | 'inline';
 
 export interface RecentFile {
   name: string;

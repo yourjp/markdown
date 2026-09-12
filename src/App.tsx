@@ -3,7 +3,10 @@ import { Toolbar } from './components/Toolbar';
 import { TableOfContents } from './components/TableOfContents';
 import { MarkdownSource } from './components/MarkdownSource';
 import { MarkdownView } from './components/MarkdownView';
+import { MarkdownEditor } from './components/MarkdownEditor';
+import { MarkdownInlineView } from './components/MarkdownInlineView';
 import { SearchBar } from './components/SearchBar';
+import { FloatingMenu } from './components/FloatingMenu';
 import { useHeadings } from './hooks/useHeadings';
 import { useActiveHeading } from './hooks/useActiveHeading';
 import { useTheme } from './hooks/useTheme';
@@ -60,8 +63,9 @@ Windows 환경에서 로컬 Markdown 문서를 빠르고 편리하게 열람할 
 - 브라우저 화면에 파일(또는 텍스트)을 **Drag & Drop** 하셔도 즉시 열람할 수 있습니다.
 
 ### 3.2 보기 모드 (View Modes)
-- **Source + View**: 원본 Markdown 텍스트와 렌더링된 결과를 분할 뷰로 비교할 수 있습니다.
-- **View Only**: 렌더링 결과만 깔끔하게 독서할 수 있습니다.
+- **Source**: 원본 Markdown 텍스트와 라인 번호만 전용으로 확인합니다.
+- **View**: 렌더링 결과만 깔끔하게 독서합니다.
+- **Source + View**: 원본 Markdown 텍스트와 렌더링 결과를 분할 뷰로 비교할 수 있습니다.
 
 ### 3.3 목차(TOC) 탐색
 - 왼쪽에 위치한 목차 항목을 클릭하면 해당 섹션으로 부드럽게 이동합니다.
@@ -86,7 +90,9 @@ export function App() {
     return localStorage.getItem('tocOpen') !== 'false';
   });
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
-    return (localStorage.getItem('viewMode') as ViewMode) || 'view';
+    const saved = localStorage.getItem('viewMode') as ViewMode;
+    if (saved === 'source' || saved === 'view' || saved === 'split') return saved;
+    return 'view';
   });
   const [zoomLevel, setZoomLevel] = useState<number>(1);
   const [searchOpen, setSearchOpen] = useState<boolean>(false);
@@ -112,16 +118,24 @@ export function App() {
   const headings = useHeadings(markdown);
   const mainContentRef = useRef<HTMLDivElement>(null);
   const sourceRef = useRef<HTMLDivElement>(null);
-  const activeHeadingId = useActiveHeading(headings, mainContentRef);
+  const [activeHeadingId, setActiveHeadingId] = useActiveHeading(headings, mainContentRef);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isSyncingScroll = useRef<boolean>(false);
 
+  const [lastModifiedTime, setLastModifiedTime] = useState<number>(Date.now());
+
+  // Helper to update markdown and last modified time
+  const updateMarkdown = (newContent: string) => {
+    setMarkdown(newContent);
+    setLastModifiedTime(Date.now());
+  };
+
   // Helper to add or update recent files (Max 3)
-  const addRecentFile = (name: string, content: string) => {
+  const addRecentFile = (name: string, content: string, time = Date.now()) => {
     setRecentFiles((prev) => {
       const filtered = prev.filter((f) => f.name !== name);
-      const updated = [{ name, content, timestamp: Date.now() }, ...filtered].slice(0, 3);
+      const updated = [{ name, content, timestamp: time }, ...filtered].slice(0, 3);
       localStorage.setItem('recentFiles', JSON.stringify(updated));
       return updated;
     });
@@ -133,14 +147,15 @@ export function App() {
       const updated = prev.filter((f) => f.name !== nameToRemove);
       localStorage.setItem('recentFiles', JSON.stringify(updated));
 
-      // If closed active document, switch to remaining document or reset
       if (fileName === nameToRemove) {
         if (updated.length > 0) {
           setFileName(updated[0].name);
           setMarkdown(updated[0].content);
+          setLastModifiedTime(updated[0].timestamp || Date.now());
         } else {
           setFileName('markdown-app.md');
           setMarkdown(DEFAULT_SAMPLE_MD);
+          setLastModifiedTime(Date.now());
         }
       }
       return updated;
@@ -151,7 +166,8 @@ export function App() {
   const handleSelectRecentFile = (file: RecentFile) => {
     setFileName(file.name);
     setMarkdown(file.content);
-    addRecentFile(file.name, file.content);
+    setLastModifiedTime(file.timestamp || Date.now());
+    addRecentFile(file.name, file.content, file.timestamp || Date.now());
   };
 
   // Content-aware Heading Alignment Scroll Sync
@@ -163,23 +179,23 @@ export function App() {
     const sourceEl = sourceRef.current;
     const viewEl = mainContentRef.current;
 
-    const sourceHeadings = headings
-      .map((h) => ({ id: h.id, el: document.getElementById(`source-heading-${h.id}`) }))
-      .filter((h): h is { id: string; el: HTMLElement } => h.el !== null);
+    let activeHId = '';
+    let activeHOffsetTop = 0;
 
-    let activeH = sourceHeadings[0];
-    for (const h of sourceHeadings) {
-      if (h.el.offsetTop <= sourceEl.scrollTop + 60) {
-        activeH = h;
-      } else {
+    for (const h of headings) {
+      const el = document.getElementById(`source-heading-${h.id}`);
+      if (el && el.offsetTop <= sourceEl.scrollTop + 60) {
+        activeHId = h.id;
+        activeHOffsetTop = el.offsetTop;
+      } else if (el) {
         break;
       }
     }
 
-    if (activeH) {
-      const targetViewHeading = document.getElementById(activeH.id);
+    if (activeHId) {
+      const targetViewHeading = document.getElementById(activeHId);
       if (targetViewHeading) {
-        const offsetDiff = activeH.el.offsetTop - sourceEl.scrollTop;
+        const offsetDiff = activeHOffsetTop - sourceEl.scrollTop;
         viewEl.scrollTop = targetViewHeading.offsetTop - offsetDiff;
       } else {
         const ratio = sourceEl.scrollTop / (sourceEl.scrollHeight - sourceEl.clientHeight || 1);
@@ -203,23 +219,23 @@ export function App() {
     const sourceEl = sourceRef.current;
     const viewEl = mainContentRef.current;
 
-    const viewHeadings = headings
-      .map((h) => ({ id: h.id, el: document.getElementById(h.id) }))
-      .filter((h): h is { id: string; el: HTMLElement } => h.el !== null);
+    let activeHId = '';
+    let activeHOffsetTop = 0;
 
-    let activeH = viewHeadings[0];
-    for (const h of viewHeadings) {
-      if (h.el.offsetTop <= viewEl.scrollTop + 60) {
-        activeH = h;
-      } else {
+    for (const h of headings) {
+      const el = document.getElementById(h.id);
+      if (el && el.offsetTop <= viewEl.scrollTop + 60) {
+        activeHId = h.id;
+        activeHOffsetTop = el.offsetTop;
+      } else if (el) {
         break;
       }
     }
 
-    if (activeH) {
-      const targetSourceHeading = document.getElementById(`source-heading-${activeH.id}`);
+    if (activeHId) {
+      const targetSourceHeading = document.getElementById(`source-heading-${activeHId}`);
       if (targetSourceHeading) {
-        const offsetDiff = activeH.el.offsetTop - viewEl.scrollTop;
+        const offsetDiff = activeHOffsetTop - viewEl.scrollTop;
         sourceEl.scrollTop = targetSourceHeading.offsetTop - offsetDiff;
       } else {
         const ratio = viewEl.scrollTop / (viewEl.scrollHeight - viewEl.clientHeight || 1);
@@ -253,12 +269,14 @@ export function App() {
     const file = e.target.files?.[0];
     if (file) {
       setFileName(file.name);
+      const modTime = file.lastModified || Date.now();
+      setLastModifiedTime(modTime);
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target?.result as string;
         if (text) {
           setMarkdown(text);
-          addRecentFile(file.name, text);
+          addRecentFile(file.name, text, modTime);
         }
       };
       reader.readAsText(file);
@@ -275,12 +293,14 @@ export function App() {
     const file = e.dataTransfer.files?.[0];
     if (file && (file.name.endsWith('.md') || file.name.endsWith('.txt') || file.type.startsWith('text/'))) {
       setFileName(file.name);
+      const modTime = file.lastModified || Date.now();
+      setLastModifiedTime(modTime);
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target?.result as string;
         if (text) {
           setMarkdown(text);
-          addRecentFile(file.name, text);
+          addRecentFile(file.name, text, modTime);
         }
       };
       reader.readAsText(file);
@@ -289,15 +309,133 @@ export function App() {
 
   // Scroll to heading
   const scrollToHeading = (id: string) => {
+    setActiveHeadingId(id);
     const viewElement = document.getElementById(id);
     const sourceElement = document.getElementById(`source-heading-${id}`);
 
-    if (viewElement) {
-      viewElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (viewElement && (viewMode === 'view' || viewMode === 'split' || viewMode === 'edit' || viewMode === 'inline')) {
+      if (mainContentRef.current) {
+        mainContentRef.current.scrollTop = viewElement.offsetTop - 20;
+      } else {
+        viewElement.scrollIntoView({ behavior: 'auto', block: 'start' });
+      }
     }
-    if (sourceElement && viewMode === 'split') {
-      sourceElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (sourceElement && (viewMode === 'source' || viewMode === 'split')) {
+      if (sourceRef.current) {
+        sourceRef.current.scrollTop = sourceElement.offsetTop - 20;
+      } else {
+        sourceElement.scrollIntoView({ behavior: 'auto', block: 'start' });
+      }
     }
+  };
+
+  // Save File Handler (With File System Picker / Confirmation)
+  const handleSaveFile = async () => {
+    try {
+      if ('showSaveFilePicker' in window) {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: fileName || 'document.md',
+          types: [
+            {
+              description: 'Markdown File',
+              accept: { 'text/markdown': ['.md', '.markdown', '.txt'] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(markdown);
+        await writable.close();
+        setFileName(handle.name);
+        const now = Date.now();
+        setLastModifiedTime(now);
+        addRecentFile(handle.name, markdown, now);
+        return;
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') return; // 사용자가 취소함
+    }
+
+    // Fallback if File System Picker is unavailable or canceled/fails
+    const targetName = prompt('저장할 파일 이름을 확인하세요:', fileName || 'document.md');
+    if (!targetName) return;
+
+    setFileName(targetName);
+    const now = Date.now();
+    setLastModifiedTime(now);
+    addRecentFile(targetName, markdown, now);
+
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = targetName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Save As Handler (Auto Versioning + File System Picker / Confirmation)
+  const handleSaveAsFile = async () => {
+    const currentName = fileName || 'document.md';
+    const extIndex = currentName.lastIndexOf('.');
+    const baseName = extIndex !== -1 ? currentName.slice(0, extIndex) : currentName;
+    const ext = extIndex !== -1 ? currentName.slice(extIndex) : '.md';
+
+    let suggestedName = '';
+    const versionMatch = baseName.match(/^(.*)_v(\d+)\.(\d+)$/);
+
+    if (versionMatch) {
+      const prefix = versionMatch[1];
+      const major = parseInt(versionMatch[2], 10);
+      const minor = parseInt(versionMatch[3], 10);
+      suggestedName = `${prefix}_v${major}.${minor + 1}${ext}`;
+    } else {
+      suggestedName = `${baseName}_v1.0${ext}`;
+    }
+
+    try {
+      if ('showSaveFilePicker' in window) {
+        const handle = await (window as any).showSaveFilePicker({
+          suggestedName: suggestedName,
+          types: [
+            {
+              description: 'Markdown File',
+              accept: { 'text/markdown': ['.md', '.markdown', '.txt'] },
+            },
+          ],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(markdown);
+        await writable.close();
+        setFileName(handle.name);
+        const now = Date.now();
+        setLastModifiedTime(now);
+        addRecentFile(handle.name, markdown, now);
+        return;
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') return; // 사용자가 취소함
+    }
+
+    // Fallback if File System Picker is unavailable or canceled/fails
+    const targetName = prompt('다른 이름으로 저장할 폴더/파일명을 확인하세요:', suggestedName);
+    if (!targetName) return;
+
+    setFileName(targetName);
+    const now = Date.now();
+    setLastModifiedTime(now);
+    addRecentFile(targetName, markdown, now);
+
+    const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = targetName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // Keyboard Shortcuts
@@ -307,6 +445,13 @@ export function App() {
         if (e.key.toLowerCase() === 'o') {
           e.preventDefault();
           handleOpenFileClick();
+        } else if (e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          if (e.shiftKey) {
+            handleSaveAsFile();
+          } else {
+            handleSaveFile();
+          }
         } else if (e.key.toLowerCase() === 'b') {
           e.preventDefault();
           setTocOpen((prev) => !prev);
@@ -330,11 +475,84 @@ export function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchOpen]);
+  }, [searchOpen, markdown, fileName]);
+
+  const [isHighlightMode, setIsHighlightMode] = useState<boolean>(false);
+
+  // Auto highlight selected text when highlight mode is enabled
+  useEffect(() => {
+    if (!isHighlightMode) return;
+
+    const handleMouseUp = () => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed) return;
+
+      const rawSelectedText = selection.toString();
+      if (!rawSelectedText || !rawSelectedText.trim()) return;
+
+      // 선택된 영역에서 줄바꿈 및 외곽 공백 정리
+      const selectedText = rawSelectedText.replace(/\r?\n/g, ' ').trim();
+      if (!selectedText) return;
+
+      // 1. 드래그 선택 범위 안에 기존 ==형광펜== 마크다운 태그가 하나라도 포함되어 있는지 확인
+      const containsHighlightRegex = /==([^=]+)==/g;
+      let foundAndRemoved = false;
+      let updatedMarkdown = markdown;
+
+      const matches = markdown.match(containsHighlightRegex);
+      if (matches) {
+        for (const matchTag of matches) {
+          const innerText = matchTag.slice(2, -2); // ==제거한 알맹이 텍스트==
+          // 드래그한 영역이 형광펜 텍스트를 포함하고 있거나, 형광펜 텍스트 안에 드래그 영역이 포함된 경우 해제
+          if (selectedText.includes(innerText) || innerText.includes(selectedText)) {
+            updatedMarkdown = updatedMarkdown.replace(matchTag, innerText);
+            foundAndRemoved = true;
+          }
+        }
+      }
+
+      if (foundAndRemoved) {
+        setMarkdown(updatedMarkdown);
+        selection.removeAllRanges();
+        return;
+      }
+
+      // 2. 형광펜이 칠해지지 않은 일반 텍스트인 경우 형광펜 추가
+      const highlightedTarget = `==${selectedText}==`;
+      if (markdown.includes(selectedText)) {
+        updatedMarkdown = markdown.replace(selectedText, highlightedTarget);
+        setMarkdown(updatedMarkdown);
+        selection.removeAllRanges();
+      } else {
+        // 마침표나 특수기호 포획 차이 대응 (예: 마침표 제외 매칭)
+        const cleanSelectedText = selectedText.replace(/[\.\,\;\:]+$/, '').trim();
+        if (cleanSelectedText && markdown.includes(cleanSelectedText)) {
+          const cleanHighlightedTarget = `==${cleanSelectedText}==`;
+          updatedMarkdown = markdown.replace(cleanSelectedText, cleanHighlightedTarget);
+          setMarkdown(updatedMarkdown);
+          selection.removeAllRanges();
+        }
+      }
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    return () => document.removeEventListener('mouseup', handleMouseUp);
+  }, [isHighlightMode, markdown]);
+
+  // Floating Menu Actions
+  const handleScrollToTop = () => {
+    if (mainContentRef.current) mainContentRef.current.scrollTop = 0;
+    if (sourceRef.current) sourceRef.current.scrollTop = 0;
+  };
+
+  const handleScrollToBottom = () => {
+    if (mainContentRef.current) mainContentRef.current.scrollTop = mainContentRef.current.scrollHeight;
+    if (sourceRef.current) sourceRef.current.scrollTop = sourceRef.current.scrollHeight;
+  };
 
   return (
     <div
-      className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-gray-900"
+      className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-gray-900 relative"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
@@ -350,7 +568,10 @@ export function App() {
         tocOpen={tocOpen}
         onToggleToc={() => setTocOpen(!tocOpen)}
         fileName={fileName}
+        lastModifiedTime={lastModifiedTime}
         onOpenFile={handleOpenFileClick}
+        onSaveFile={handleSaveFile}
+        onSaveAsFile={handleSaveAsFile}
         viewMode={viewMode}
         onToggleViewMode={(mode) => setViewMode(mode)}
         theme={theme}
@@ -384,9 +605,79 @@ export function App() {
           />
         )}
 
-        {/* Main Content Area (Source + View or View Only) */}
+        {/* Main Content Area (Source / Edit / View / Source + View) */}
         <main className="flex-1 flex overflow-hidden relative">
-          {viewMode === 'split' ? (
+          {viewMode === 'source' ? (
+            <div className="w-full h-full overflow-hidden">
+              <MarkdownSource
+                ref={sourceRef}
+                markdown={markdown}
+              />
+            </div>
+          ) : viewMode === 'edit' ? (
+            <div className="flex w-full h-full">
+              {/* Markdown Interactive Live Editor Panel */}
+              <div
+                style={{ width: `${splitRatio}%` }}
+                className="h-full border-r border-gray-200 dark:border-gray-700 overflow-hidden"
+              >
+                <MarkdownEditor
+                  markdown={markdown}
+                  onChange={updateMarkdown}
+                />
+              </div>
+
+              {/* Split Resizer Divider */}
+              <div
+                className="w-1 bg-gray-200 dark:bg-gray-700 hover:bg-blue-500 cursor-col-resize select-none transition-colors"
+                onMouseDown={(e) => {
+                  const startX = e.clientX;
+                  const startRatio = splitRatio;
+                  const containerWidth = e.currentTarget.parentElement?.clientWidth || 1;
+
+                  const onMouseMove = (moveEvent: MouseEvent) => {
+                    const deltaX = moveEvent.clientX - startX;
+                    const newRatio = Math.min(
+                      Math.max(startRatio + (deltaX / containerWidth) * 100, 20),
+                      80
+                    );
+                    setSplitRatio(newRatio);
+                  };
+
+                  const onMouseUp = () => {
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+                  };
+
+                  window.addEventListener('mousemove', onMouseMove);
+                  window.addEventListener('mouseup', onMouseUp);
+                }}
+              />
+
+              {/* Instant Live Rendered Preview Panel */}
+              <div
+                style={{ width: `${100 - splitRatio}%` }}
+                className="h-full overflow-hidden"
+              >
+                <MarkdownView
+                  ref={mainContentRef}
+                  markdown={markdown}
+                  zoomLevel={zoomLevel}
+                  searchQuery={searchQuery}
+                />
+              </div>
+            </div>
+          ) : viewMode === 'inline' ? (
+            <div className="w-full h-full overflow-hidden">
+              <MarkdownInlineView
+                ref={mainContentRef}
+                markdown={markdown}
+                zoomLevel={zoomLevel}
+                searchQuery={searchQuery}
+                onChangeMarkdown={updateMarkdown}
+              />
+            </div>
+          ) : viewMode === 'split' ? (
             <div className="flex w-full h-full">
               {/* Markdown Source Code Panel */}
               <div
@@ -453,6 +744,13 @@ export function App() {
           )}
         </main>
       </div>
+
+      <FloatingMenu
+        onScrollToTop={handleScrollToTop}
+        onScrollToBottom={handleScrollToBottom}
+        isHighlightMode={isHighlightMode}
+        onToggleHighlightMode={() => setIsHighlightMode((prev) => !prev)}
+      />
     </div>
   );
 }

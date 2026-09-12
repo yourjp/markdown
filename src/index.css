@@ -32,9 +32,10 @@
 html:not(.dark) body,
 html:not(.dark) main,
 html:not(.dark) aside,
-html:not(.dark) .markdown-body {
+html:not(.dark) .markdown-body,
+html:not(.dark) .markdown-source {
   background-color: #ffffff !important;
-  color: #000000;
+  color: #000000 !important;
 }
 
 /* TOC Light Mode explicit styling */
@@ -180,10 +181,13 @@ html:not(.dark) .toc-item-active {
 }
 
 .markdown-body mark {
-  background-color: #000000;
-  color: #ffffff;
-  padding: 2px 6px;
+  background-color: #fef08a !important; /* Bright Yellow Highlight */
+  color: #000000 !important;
+  padding: 0 2px;
+  margin: 0;
   border-radius: 2px;
+  display: inline;
+  vertical-align: baseline;
 }
 
 .markdown-body hr {
@@ -194,9 +198,10 @@ html:not(.dark) .toc-item-active {
 html.dark body,
 html.dark main,
 html.dark aside,
-html.dark .markdown-body {
+html.dark .markdown-body,
+html.dark .markdown-source {
   background-color: #0f172a !important; /* Deep Blue Slate Background */
-  color: #f8fafc;
+  color: #f8fafc !important;
 }
 
 /* TOC Dark Mode explicit styling */
@@ -291,7 +296,14 @@ html.dark .toc-item-active {
   border-color: #3b82f6;
 }
 
-.dark .markdown-body mark {
-  background-color: #1d4ed8;
-  color: #ffffff;
+.dark .markdown-body mark,
+.dark .markdown-body mark * {
+  background-color: #ec4899 !important; /* Vibrant Pink Highlight in Dark Mode */
+  color: #ffffff !important; /* White Text for High Contrast */
+  padding: 0 2px;
+  margin: 0;
+  border-radius: 2px;
+  font-weight: 700;
+  display: inline;
+  vertical-align: baseline;
 }
