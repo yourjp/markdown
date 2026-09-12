@@ -494,17 +494,69 @@ export function App() {
       const selectedText = rawSelectedText.replace(/\r?\n/g, ' ').trim();
       if (!selectedText) return;
 
-      // 1. 드래그 선택 범위 안에 기존 ==형광펜== 마크다운 태그가 하나라도 포함되어 있는지 확인
-      const containsHighlightRegex = /==([^=]+)==/g;
+      // DOM Selection에서 텍스트 노드의 부모 컨텍스트 및 선택 범위 추출
+      const anchorNode = selection.anchorNode;
+      if (!anchorNode) return;
+
+      // 텍스트 선택이 단어의 일부만 드래그된 경우, 해당 단어 전체(공백 기준 full word)로 자동 확장
+      let fullSelectedText = selectedText;
+      const textContent = anchorNode.textContent || '';
+      const focusNode = selection.focusNode;
+
+      // 동일 텍스트 노드 내에서 드래그한 경우 단어 경계(공백/특수문자 기준)로 선택 텍스트 자동 확장
+      if (anchorNode === focusNode && textContent) {
+        const startOffset = Math.min(selection.anchorOffset, selection.focusOffset);
+        const endOffset = Math.max(selection.anchorOffset, selection.focusOffset);
+
+        // 앞쪽 단어 시작 경계 찾기
+        let wordStart = startOffset;
+        while (wordStart > 0 && !/[\s\.\,\;\:\!\?\(\)\[\]\{\}\<\>\`\*\_]/.test(textContent[wordStart - 1])) {
+          wordStart--;
+        }
+
+        // 뒤쪽 단어 끝 경계 찾기
+        let wordEnd = endOffset;
+        while (wordEnd < textContent.length && !/[\s\.\,\;\:\!\?\(\)\[\]\{\}\<\>\`\*\_]/.test(textContent[wordEnd])) {
+          wordEnd++;
+        }
+
+        const expandedWord = textContent.slice(wordStart, wordEnd).trim();
+        if (expandedWord && expandedWord.includes(selectedText)) {
+          fullSelectedText = expandedWord;
+        }
+      }
+
+      // 선택된 DOM 노드가 위치한 마크다운 컨테이너 패널 탐색
+      let element: HTMLElement | null = anchorNode.nodeType === Node.ELEMENT_NODE ? (anchorNode as HTMLElement) : anchorNode.parentElement;
+      
+      let targetLineIndex: number | null = null;
+      while (element && element !== document.body) {
+        if (element.hasAttribute('data-line-index')) {
+          targetLineIndex = parseInt(element.getAttribute('data-line-index')!, 10);
+          break;
+        }
+        element = element.parentElement;
+      }
+
+      // Helper function to escape regex special chars
+      const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+      // 1. 드래그 선택 범위 안에 기존 ==형광펜== 마크다운 태그가 포함되어 있는지 확인하여 해제
+      const highlightTagRegex = /==([\s\S]+?)==/g;
       let foundAndRemoved = false;
       let updatedMarkdown = markdown;
 
-      const matches = markdown.match(containsHighlightRegex);
+      const matches = markdown.match(highlightTagRegex);
       if (matches) {
         for (const matchTag of matches) {
-          const innerText = matchTag.slice(2, -2); // ==제거한 알맹이 텍스트==
-          // 드래그한 영역이 형광펜 텍스트를 포함하고 있거나, 형광펜 텍스트 안에 드래그 영역이 포함된 경우 해제
-          if (selectedText.includes(innerText) || innerText.includes(selectedText)) {
+          const innerText = matchTag.slice(2, -2);
+          const cleanInner = innerText.replace(/\*\*|\*|~~|`|<mark>|<\/mark>/g, '').trim();
+          const cleanSelected = fullSelectedText.replace(/\*\*|\*|~~|`|<mark>|<\/mark>/g, '').trim();
+
+          if (
+            cleanSelected.length > 0 &&
+            (cleanSelected.includes(cleanInner) || cleanInner.includes(cleanSelected))
+          ) {
             updatedMarkdown = updatedMarkdown.replace(matchTag, innerText);
             foundAndRemoved = true;
           }
@@ -517,21 +569,83 @@ export function App() {
         return;
       }
 
-      // 2. 형광펜이 칠해지지 않은 일반 텍스트인 경우 형광펜 추가
-      const highlightedTarget = `==${selectedText}==`;
-      if (markdown.includes(selectedText)) {
-        updatedMarkdown = markdown.replace(selectedText, highlightedTarget);
+      // 2. 형광펜 추가: 확장된 단어(fullSelectedText) 또는 선택된 원래 텍스트(selectedText)를 기준으로 치환
+      let replaced = false;
+
+      // 사용할 탐색 텍스트 후보 리스트 (확장된 단어 우선, fallback으로 선택한 텍스트)
+      const candidates = [fullSelectedText, selectedText]
+        .map((str) => str.replace(/[\s\.\,\;\:\!\?]+$/, '').trim())
+        .filter(Boolean);
+
+      const lines = markdown.split('\n');
+
+      for (const cleanSelectedStr of candidates) {
+        if (replaced) break;
+
+        // A. targetLineIndex가 확인되면 해당 줄에서 특정 치환
+        if (targetLineIndex !== null && targetLineIndex >= 0 && targetLineIndex < lines.length) {
+          const line = lines[targetLineIndex];
+          if (line.includes(cleanSelectedStr)) {
+            lines[targetLineIndex] = line.replace(cleanSelectedStr, `==${cleanSelectedStr}==`);
+            updatedMarkdown = lines.join('\n');
+            replaced = true;
+            break;
+          }
+        }
+
+        // B. 선택 텍스트와 드래그 주변 문맥(parentElement.textContent)을 대조하여 정확한 줄 치환
+        if (!replaced) {
+          const parentText = anchorNode.parentElement?.textContent || '';
+          const cleanParent = parentText.replace(/\r?\n/g, ' ').trim();
+
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const cleanLine = line.replace(/\*\*|\*|~~|`|<mark>|<\/mark>|\[|\]|\([^)]+\)/g, '');
+
+            // 마크다운 라인이 선택된 단어와 주변 문맥을 모두 포함하는 경우 우선 치환
+            if (cleanLine.includes(cleanSelectedStr) && (cleanParent === '' || cleanLine.includes(cleanParent.slice(0, 8)))) {
+              if (line.includes(cleanSelectedStr)) {
+                lines[i] = line.replace(cleanSelectedStr, `==${cleanSelectedStr}==`);
+                updatedMarkdown = lines.join('\n');
+                replaced = true;
+                break;
+              } else {
+                // 서식 기호가 섞여있는 경우 정규식 매칭 치환
+                const wordToken = escapeRegex(cleanSelectedStr);
+                const segRegex = new RegExp(`(?:\\*\\*|\\*|~~|\`)*${wordToken}(?:\\*\\*|\\*|~~|\`)?`);
+                const segMatch = line.match(segRegex);
+                if (segMatch && segMatch[0]) {
+                  lines[i] = line.replace(segMatch[0], `==${segMatch[0]}==`);
+                  updatedMarkdown = lines.join('\n');
+                  replaced = true;
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        // C. Fallback: 문서 내에서 cleanSelectedStr가 처음 발견된 일반 줄 치환
+        if (!replaced) {
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].includes(cleanSelectedStr)) {
+              lines[i] = lines[i].replace(cleanSelectedStr, `==${cleanSelectedStr}==`);
+              updatedMarkdown = lines.join('\n');
+              replaced = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (replaced) {
         setMarkdown(updatedMarkdown);
         selection.removeAllRanges();
-      } else {
-        // 마침표나 특수기호 포획 차이 대응 (예: 마침표 제외 매칭)
-        const cleanSelectedText = selectedText.replace(/[\.\,\;\:]+$/, '').trim();
-        if (cleanSelectedText && markdown.includes(cleanSelectedText)) {
-          const cleanHighlightedTarget = `==${cleanSelectedText}==`;
-          updatedMarkdown = markdown.replace(cleanSelectedText, cleanHighlightedTarget);
-          setMarkdown(updatedMarkdown);
-          selection.removeAllRanges();
-        }
+      }
+
+      if (replaced) {
+        setMarkdown(updatedMarkdown);
+        selection.removeAllRanges();
       }
     };
 
