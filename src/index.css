@@ -329,10 +329,9 @@ html.dark .toc-item-active {
     padding: 0 !important;
   }
 
-  /* Ensure print area and ALL descendant elements allow multi-page expansion */
-  #markdown-print-area,
-  #markdown-print-area * {
-    display: block;
+  /* Ensure print area and ALL descendant elements allow multi-page expansion without destroying table layouts */
+  #markdown-print-area {
+    display: block !important;
     width: 100% !important;
     height: auto !important;
     min-height: 0 !important;
@@ -340,18 +339,38 @@ html.dark .toc-item-active {
     overflow: visible !important;
     background-color: #ffffff !important;
     color: #000000 !important;
-    position: static !important;
-    float: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
-  #markdown-print-area inline,
-  #markdown-print-area span,
-  #markdown-print-area a,
-  #markdown-print-area strong,
-  #markdown-print-area em,
-  #markdown-print-area code:not(pre code),
-  #markdown-print-area mark {
-    display: inline !important;
+  #markdown-print-area * {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  #markdown-print-area table {
+    display: table !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  #markdown-print-area thead {
+    display: table-header-group !important;
+  }
+
+  #markdown-print-area tbody {
+    display: table-row-group !important;
+  }
+
+  #markdown-print-area tr {
+    display: table-row !important;
+  }
+
+  #markdown-print-area th,
+  #markdown-print-area td {
+    display: table-cell !important;
   }
 
   /* Hide everything not in print area */
