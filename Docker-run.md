@@ -1,4 +1,4 @@
-# Docker 실행 및 이미지 가이드 (docker-run.md)
+# Docker 실행 및 이미지 가이드 (Docker-run.md)
 
 이 문서는 Markdown 애플리케이션의 Docker 컨테이너 빌드 및 실행 시 필요한 Docker 이미지 정보와 가이드를 제공합니다.
 
@@ -14,6 +14,31 @@ Dockerfile의 멀티 스테이지 빌드(Multi-stage build) 과정에서 사용�
 | **`nginx:alpine`** | **Production Stage** | 빌드 완료된 정적 파일(`dist`)을 서빙하는 경량 Nginx 웹 서버 이미지 (포트 80) |
 
 > **참고**: Docker Build 시 상기 베이스 이미지들은 Docker Hub로부터 자동으로 풀(Pull) 받아옵니다.
+
+---
+
+## 🏗️ Docker 이미지 구조 및 특징 (Image Architecture)
+
+Docker Compose로 빌드되는 최종 이미지(`markdown-markdown-app`)의 내부 구성 및 구조입니다.
+
+### 1) 이미지 이름의 유래
+- Docker Compose(`compose.yaml`) 실행 시 **현재 폴더 이름(`markdown`) + 서비스 이름(`markdown-app`)**이 자동 조합되어 **`markdown-markdown-app`**이라는 이미지명이 생성됩니다.
+
+### 2) 이미지 내부 디렉토리 구조
+Node.js 런타임과 소스코드는 배제되고, Nginx와 빌드 완료된 정적 파일만 포함됩니다:
+
+```text
+/
+├── etc/nginx/conf.d/
+│   └── default.conf          # SPA 라우팅 및 Gzip 지원 Nginx 설정 파일
+└── usr/share/nginx/html/      # 웹 서비스 정적 파일 디렉토리
+    ├── index.html            # 메인 HTML 엔트리 포인트
+    └── assets/               # 번들링된 JS 및 CSS 파일
+```
+
+### 3) 이미지의 주요 장점
+- **초경량 용량**: Node.js 환경이 제거되어 약 **20~40MB**의 매우 가벼운 용량을 가집니다.
+- **고성능 & 보안**: Nginx의 Gzip 압축 적용 및 소스코드 미노출로 높은 보안성과 빠른 서빙 속도를 제공합니다.
 
 ---
 
