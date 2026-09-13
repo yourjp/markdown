@@ -36,7 +36,7 @@ npm run preview
 
 ## 3. Docker 컨테이너 실행 (Docker Execution)
 
-Docker 환경에서 Nginx 기반으로 컨테이너를 빌드하고 실행하는 방법입니다.
+Docker 환경에서 Nginx 기반으로 컨테이너를 빌드하고 실행하는 방법입니다. (로컬 `npm run dev`와의 포트 충돌 방지를 위해 **`3333`** 포트를 사용합니다.)
 
 ### 방법 A: Docker Compose 사용 (권장)
 
@@ -45,7 +45,7 @@ Docker 환경에서 Nginx 기반으로 컨테이너를 빌드하고 실행하는
 docker compose up -d --build
 
 # 실행 확인
-# 웹 브라우저에서 http://localhost:3000 접속
+# 웹 브라우저에서 http://localhost:3333 접속
 
 # 컨테이너 중지 및 제거
 docker compose down
@@ -57,8 +57,8 @@ docker compose down
 # 1. 이미지 빌드
 docker build -t markdown-app .
 
-# 2. 컨테이너 실행 (포트 3000 연결)
-docker run -d -p 3000:80 --name markdown-app markdown-app
+# 2. 컨테이너 실행 (포트 3333 연결)
+docker run -d -p 3333:80 --name markdown-app markdown-app
 
 # 3. 컨테이너 중지
 docker stop markdown-app && docker rm markdown-app
