@@ -443,6 +443,11 @@ export function App() {
   const [isHighlightMode, setIsHighlightMode] = useState<boolean>(false);
   const [isTaskMode, setIsTaskMode] = useState<boolean>(false);
 
+  // Print document handler
+  const handlePrint = () => {
+    window.print();
+  };
+
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -450,6 +455,9 @@ export function App() {
         if (e.key.toLowerCase() === 'o') {
           e.preventDefault();
           handleOpenFileClick();
+        } else if (e.key.toLowerCase() === 'p') {
+          e.preventDefault();
+          handlePrint();
         } else if (e.key.toLowerCase() === 's') {
           e.preventDefault();
           if (e.shiftKey) {
@@ -867,226 +875,238 @@ export function App() {
   };
 
   return (
-    <div
-      className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-gray-900 relative"
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
-    >
-      <input
-        type="file"
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept=".md,.markdown,.txt"
-        className="hidden"
-      />
-
-      <Toolbar
-        tocOpen={tocOpen}
-        onToggleToc={() => setTocOpen(!tocOpen)}
-        fileName={fileName}
-        lastModifiedTime={lastModifiedTime}
-        onOpenFile={handleOpenFileClick}
-        onSaveFile={handleSaveFile}
-        onSaveAsFile={handleSaveAsFile}
-        viewMode={viewMode}
-        onToggleViewMode={(mode) => setViewMode(mode)}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        searchOpen={searchOpen}
-        onToggleSearch={() => setSearchOpen(!searchOpen)}
-        zoomLevel={zoomLevel}
-        onZoomIn={() => setZoomLevel((prev) => Math.min(prev + 0.1, 2.0))}
-        onZoomOut={() => setZoomLevel((prev) => Math.max(prev - 0.1, 0.6))}
-        onResetZoom={() => setZoomLevel(1.0)}
-        recentFiles={recentFiles}
-        onSelectRecentFile={handleSelectRecentFile}
-        onRemoveRecentFile={handleRemoveRecentFile}
-      />
-
-      {searchOpen && (
-        <SearchBar
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          onClose={() => setSearchOpen(false)}
+    <>
+      <div
+        className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-gray-900 relative print:hidden"
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileChange}
+          accept=".md,.markdown,.txt"
+          className="hidden"
         />
-      )}
 
-      <div className="flex flex-1 h-[calc(100vh-3.5rem)] overflow-hidden">
-        {/* Left Table of Contents Panel */}
-        {tocOpen && (
-          <TableOfContents
-            headings={headings}
-            activeId={activeHeadingId}
-            onSelectHeading={scrollToHeading}
+        <Toolbar
+          tocOpen={tocOpen}
+          onToggleToc={() => setTocOpen(!tocOpen)}
+          fileName={fileName}
+          lastModifiedTime={lastModifiedTime}
+          onOpenFile={handleOpenFileClick}
+          onSaveFile={handleSaveFile}
+          onSaveAsFile={handleSaveAsFile}
+          onPrint={handlePrint}
+          viewMode={viewMode}
+          onToggleViewMode={(mode) => setViewMode(mode)}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          searchOpen={searchOpen}
+          onToggleSearch={() => setSearchOpen(!searchOpen)}
+          zoomLevel={zoomLevel}
+          onZoomIn={() => setZoomLevel((prev) => Math.min(prev + 0.1, 2.0))}
+          onZoomOut={() => setZoomLevel((prev) => Math.max(prev - 0.1, 0.6))}
+          onResetZoom={() => setZoomLevel(1.0)}
+          recentFiles={recentFiles}
+          onSelectRecentFile={handleSelectRecentFile}
+          onRemoveRecentFile={handleRemoveRecentFile}
+        />
+
+        {searchOpen && (
+          <SearchBar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onClose={() => setSearchOpen(false)}
           />
         )}
 
-        {/* Main Content Area (Source / Edit / View / Source + View) */}
-        <main className="flex-1 flex overflow-hidden relative">
-          {viewMode === 'source' ? (
-            <div className="w-full h-full overflow-hidden">
-              <MarkdownSource
-                ref={sourceRef}
-                markdown={markdown}
-              />
-            </div>
-          ) : viewMode === 'edit' ? (
-            <div className="flex w-full h-full">
-              {/* Markdown Interactive Live Editor Panel */}
-              <div
-                style={{ width: `${splitRatio}%` }}
-                className="h-full border-r border-gray-200 dark:border-gray-700 overflow-hidden"
-              >
-                <MarkdownEditor
-                  markdown={markdown}
-                  onChange={updateMarkdown}
-                />
-              </div>
+        <div className="flex flex-1 h-[calc(100vh-3.5rem)] overflow-hidden">
+          {/* Left Table of Contents Panel */}
+          {tocOpen && (
+            <TableOfContents
+              headings={headings}
+              activeId={activeHeadingId}
+              onSelectHeading={scrollToHeading}
+            />
+          )}
 
-              {/* Split Resizer Divider */}
-              <div
-                className="w-1 bg-gray-200 dark:bg-gray-700 hover:bg-blue-500 cursor-col-resize select-none transition-colors"
-                onMouseDown={(e) => {
-                  const startX = e.clientX;
-                  const startRatio = splitRatio;
-                  const containerWidth = e.currentTarget.parentElement?.clientWidth || 1;
-
-                  const onMouseMove = (moveEvent: MouseEvent) => {
-                    const deltaX = moveEvent.clientX - startX;
-                    const newRatio = Math.min(
-                      Math.max(startRatio + (deltaX / containerWidth) * 100, 20),
-                      80
-                    );
-                    setSplitRatio(newRatio);
-                  };
-
-                  const onMouseUp = () => {
-                    window.removeEventListener('mousemove', onMouseMove);
-                    window.removeEventListener('mouseup', onMouseUp);
-                  };
-
-                  window.addEventListener('mousemove', onMouseMove);
-                  window.addEventListener('mouseup', onMouseUp);
-                }}
-              />
-
-              {/* Instant Live Rendered Preview Panel */}
-              <div
-                style={{ width: `${100 - splitRatio}%` }}
-                className="h-full overflow-hidden"
-              >
-                <MarkdownView
-                  ref={mainContentRef}
-                  markdown={markdown}
-                  zoomLevel={zoomLevel}
-                  searchQuery={searchQuery}
-                  onToggleTaskListItem={handleToggleTaskListItem}
-                />
-              </div>
-            </div>
-          ) : viewMode === 'inline' ? (
-            <div className="w-full h-full overflow-hidden">
-              <MarkdownInlineView
-                ref={mainContentRef}
-                markdown={markdown}
-                zoomLevel={zoomLevel}
-                searchQuery={searchQuery}
-                onChangeMarkdown={updateMarkdown}
-              />
-            </div>
-          ) : viewMode === 'split' ? (
-            <div className="flex w-full h-full">
-              {/* Markdown Source Code Panel */}
-              <div
-                style={{ width: `${splitRatio}%` }}
-                className="h-full border-r border-gray-200 dark:border-gray-700 overflow-hidden"
-              >
+          {/* Main Content Area (Source / Edit / View / Source + View) */}
+          <main className="flex-1 flex overflow-hidden relative">
+            {viewMode === 'source' ? (
+              <div className="w-full h-full overflow-hidden">
                 <MarkdownSource
                   ref={sourceRef}
                   markdown={markdown}
-                  onScroll={handleSourceScroll}
                 />
               </div>
+            ) : viewMode === 'edit' ? (
+              <div className="flex w-full h-full">
+                {/* Markdown Interactive Live Editor Panel */}
+                <div
+                  style={{ width: `${splitRatio}%` }}
+                  className="h-full border-r border-gray-200 dark:border-gray-700 overflow-hidden"
+                >
+                  <MarkdownEditor
+                    markdown={markdown}
+                    onChange={updateMarkdown}
+                  />
+                </div>
 
-              {/* Split Resizer Divider */}
-              <div
-                className="w-1 bg-gray-200 dark:bg-gray-700 hover:bg-blue-500 cursor-col-resize select-none transition-colors"
-                onMouseDown={(e) => {
-                  const startX = e.clientX;
-                  const startRatio = splitRatio;
-                  const containerWidth = e.currentTarget.parentElement?.clientWidth || 1;
+                {/* Split Resizer Divider */}
+                <div
+                  className="w-1 bg-gray-200 dark:bg-gray-700 hover:bg-blue-500 cursor-col-resize select-none transition-colors"
+                  onMouseDown={(e) => {
+                    const startX = e.clientX;
+                    const startRatio = splitRatio;
+                    const containerWidth = e.currentTarget.parentElement?.clientWidth || 1;
 
-                  const onMouseMove = (moveEvent: MouseEvent) => {
-                    const deltaX = moveEvent.clientX - startX;
-                    const newRatio = Math.min(
-                      Math.max(startRatio + (deltaX / containerWidth) * 100, 20),
-                      80
-                    );
-                    setSplitRatio(newRatio);
-                  };
+                    const onMouseMove = (moveEvent: MouseEvent) => {
+                      const deltaX = moveEvent.clientX - startX;
+                      const newRatio = Math.min(
+                        Math.max(startRatio + (deltaX / containerWidth) * 100, 20),
+                        80
+                      );
+                      setSplitRatio(newRatio);
+                    };
 
-                  const onMouseUp = () => {
-                    window.removeEventListener('mousemove', onMouseMove);
-                    window.removeEventListener('mouseup', onMouseUp);
-                  };
+                    const onMouseUp = () => {
+                      window.removeEventListener('mousemove', onMouseMove);
+                      window.removeEventListener('mouseup', onMouseUp);
+                    };
 
-                  window.addEventListener('mousemove', onMouseMove);
-                  window.addEventListener('mouseup', onMouseUp);
-                }}
-              />
+                    window.addEventListener('mousemove', onMouseMove);
+                    window.addEventListener('mouseup', onMouseUp);
+                  }}
+                />
 
-              {/* Markdown Rendered View Panel */}
-              <div
-                style={{ width: `${100 - splitRatio}%` }}
-                className="h-full overflow-hidden"
-              >
+                {/* Instant Live Rendered Preview Panel */}
+                <div
+                  style={{ width: `${100 - splitRatio}%` }}
+                  className="h-full overflow-hidden"
+                >
+                  <MarkdownView
+                    ref={mainContentRef}
+                    markdown={markdown}
+                    zoomLevel={zoomLevel}
+                    searchQuery={searchQuery}
+                    onToggleTaskListItem={handleToggleTaskListItem}
+                  />
+                </div>
+              </div>
+            ) : viewMode === 'inline' ? (
+              <div className="w-full h-full overflow-hidden">
+                <MarkdownInlineView
+                  ref={mainContentRef}
+                  markdown={markdown}
+                  zoomLevel={zoomLevel}
+                  searchQuery={searchQuery}
+                  onChangeMarkdown={updateMarkdown}
+                />
+              </div>
+            ) : viewMode === 'split' ? (
+              <div className="flex w-full h-full">
+                {/* Markdown Source Code Panel */}
+                <div
+                  style={{ width: `${splitRatio}%` }}
+                  className="h-full border-r border-gray-200 dark:border-gray-700 overflow-hidden"
+                >
+                  <MarkdownSource
+                    ref={sourceRef}
+                    markdown={markdown}
+                    onScroll={handleSourceScroll}
+                  />
+                </div>
+
+                {/* Split Resizer Divider */}
+                <div
+                  className="w-1 bg-gray-200 dark:bg-gray-700 hover:bg-blue-500 cursor-col-resize select-none transition-colors"
+                  onMouseDown={(e) => {
+                    const startX = e.clientX;
+                    const startRatio = splitRatio;
+                    const containerWidth = e.currentTarget.parentElement?.clientWidth || 1;
+
+                    const onMouseMove = (moveEvent: MouseEvent) => {
+                      const deltaX = moveEvent.clientX - startX;
+                      const newRatio = Math.min(
+                        Math.max(startRatio + (deltaX / containerWidth) * 100, 20),
+                        80
+                      );
+                      setSplitRatio(newRatio);
+                    };
+
+                    const onMouseUp = () => {
+                      window.removeEventListener('mousemove', onMouseMove);
+                      window.removeEventListener('mouseup', onMouseUp);
+                    };
+
+                    window.addEventListener('mousemove', onMouseMove);
+                    window.addEventListener('mouseup', onMouseUp);
+                  }}
+                />
+
+                {/* Markdown Rendered View Panel */}
+                <div
+                  style={{ width: `${100 - splitRatio}%` }}
+                  className="h-full overflow-hidden"
+                >
+                  <MarkdownView
+                    ref={mainContentRef}
+                    markdown={markdown}
+                    zoomLevel={zoomLevel}
+                    searchQuery={searchQuery}
+                    onScroll={handleViewScroll}
+                    onToggleTaskListItem={handleToggleTaskListItem}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="w-full h-full overflow-hidden">
                 <MarkdownView
                   ref={mainContentRef}
                   markdown={markdown}
                   zoomLevel={zoomLevel}
                   searchQuery={searchQuery}
-                  onScroll={handleViewScroll}
                   onToggleTaskListItem={handleToggleTaskListItem}
                 />
               </div>
-            </div>
-          ) : (
-            <div className="w-full h-full overflow-hidden">
-              <MarkdownView
-                ref={mainContentRef}
-                markdown={markdown}
-                zoomLevel={zoomLevel}
-                searchQuery={searchQuery}
-                onToggleTaskListItem={handleToggleTaskListItem}
-              />
-            </div>
-          )}
-        </main>
+            )}
+          </main>
+        </div>
+
+        <FloatingMenu
+          onScrollToTop={handleScrollToTop}
+          onScrollToBottom={handleScrollToBottom}
+          isHighlightMode={isHighlightMode}
+          onToggleHighlightMode={() => {
+            setIsHighlightMode((prev) => !prev);
+            if (!isHighlightMode) setIsTaskMode(false);
+          }}
+          isTaskMode={isTaskMode}
+          onToggleTaskMode={() => {
+            setIsTaskMode((prev) => !prev);
+            if (!isTaskMode) setIsHighlightMode(false);
+          }}
+          onConvertSelectionToTask={handleConvertSelectionToTask}
+          viewMode={viewMode}
+          onNextViewMode={() => {
+            const modes: ViewMode[] = ['source', 'edit', 'inline', 'view', 'split'];
+            const currentIndex = modes.indexOf(viewMode);
+            const nextIndex = (currentIndex + 1) % modes.length;
+            setViewMode(modes[nextIndex]);
+          }}
+          onSwitchToViewMode={() => setViewMode('view')}
+        />
       </div>
 
-      <FloatingMenu
-        onScrollToTop={handleScrollToTop}
-        onScrollToBottom={handleScrollToBottom}
-        isHighlightMode={isHighlightMode}
-        onToggleHighlightMode={() => {
-          setIsHighlightMode((prev) => !prev);
-          if (!isHighlightMode) setIsTaskMode(false);
-        }}
-        isTaskMode={isTaskMode}
-        onToggleTaskMode={() => {
-          setIsTaskMode((prev) => !prev);
-          if (!isTaskMode) setIsHighlightMode(false);
-        }}
-        onConvertSelectionToTask={handleConvertSelectionToTask}
-        viewMode={viewMode}
-        onNextViewMode={() => {
-          const modes: ViewMode[] = ['source', 'edit', 'inline', 'view', 'split'];
-          const currentIndex = modes.indexOf(viewMode);
-          const nextIndex = (currentIndex + 1) % modes.length;
-          setViewMode(modes[nextIndex]);
-        }}
-        onSwitchToViewMode={() => setViewMode('view')}
-      />
-    </div>
+      {/* Dedicated Print Area (Rendered exclusively during browser print) */}
+      <div id="markdown-print-area" className="hidden print:block w-full bg-white text-black p-0 markdown-body">
+        <MarkdownView
+          markdown={markdown}
+          zoomLevel={1}
+          searchQuery=""
+        />
+      </div>
+    </>
   );
 }
