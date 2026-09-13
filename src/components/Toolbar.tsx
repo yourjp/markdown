@@ -18,7 +18,8 @@ import {
   Save,
   Download,
   Edit3,
-  Edit2
+  Edit2,
+  Printer
 } from 'lucide-react';
 import { ViewMode, RecentFile } from '../types';
 
@@ -30,6 +31,7 @@ interface ToolbarProps {
   onOpenFile: () => void;
   onSaveFile: () => void;
   onSaveAsFile: () => void;
+  onPrint: () => void;
   viewMode: ViewMode;
   onToggleViewMode: (mode: ViewMode) => void;
   theme: 'light' | 'dark';
@@ -53,6 +55,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onOpenFile,
   onSaveFile,
   onSaveAsFile,
+  onPrint,
   viewMode,
   onToggleViewMode,
   theme,
@@ -130,6 +133,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <Download size={18} />
         </button>
 
+        <button
+          onClick={onPrint}
+          className="p-2 bg-indigo-900/40 hover:bg-indigo-900/60 text-indigo-300 rounded-lg transition-colors border border-indigo-800/40 flex items-center justify-center"
+          title="문서 인쇄 / PDF로 저장 (Ctrl+P)"
+        >
+          <Printer size={18} />
+        </button>
+
         {/* Recent Files Dropdown Menu */}
         <div className="relative" ref={dropdownRef}>
           <button
@@ -196,7 +207,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
         <div className="hidden md:flex items-center space-x-2 pl-2 border-l border-gray-600 truncate max-w-sm">
           <span className="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shadow-2xs shrink-0">
-            v1.7.15
+            v1.8.0
           </span>
           <span className="text-sm font-bold text-gray-200 truncate">
             {fileName || "문서를 선택하세요"}
