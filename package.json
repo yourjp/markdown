@@ -1,12 +1,12 @@
 {
   "name": "markdown",
-  "version": "1.7.10",
+  "version": "1.7.11",
   "description": "",
   "main": "index.js",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npx tsc && npx vite build",
     "preview": "vite preview",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
