@@ -286,6 +286,22 @@ export const FloatingMenu: React.FC<FloatingMenuProps> = ({
                   <span className="text-amber-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + O</span>
                 </div>
                 <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
+                  <span className="text-gray-900 font-bold">인쇄 / PDF 출력</span>
+                  <span className="text-indigo-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + P</span>
+                </div>
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
+                  <span className="text-gray-900 font-bold">서식 복사 (HTML)</span>
+                  <span className="text-purple-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + Shift + C</span>
+                </div>
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
+                  <span className="text-gray-900 font-bold">새 문서 탭</span>
+                  <span className="text-emerald-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + Alt + N</span>
+                </div>
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
+                  <span className="text-gray-900 font-bold">탭 전환 (다음/이전)</span>
+                  <span className="text-blue-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + Tab / Shift+Tab</span>
+                </div>
+                <div className="bg-gray-50 p-1.5 rounded border border-gray-200 flex justify-between items-center shadow-2xs">
                   <span className="text-gray-900 font-bold">저장 / Save As</span>
                   <span className="text-amber-700 font-bold bg-white px-1.5 py-0.5 rounded border border-gray-300 shadow-2xs">Ctrl + S / Shift+S</span>
                 </div>

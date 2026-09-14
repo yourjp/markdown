@@ -19,7 +19,8 @@ import {
   Download,
   Edit3,
   Edit2,
-  Printer
+  Printer,
+  ClipboardCopy
 } from 'lucide-react';
 import { ViewMode, RecentFile } from '../types';
 
@@ -32,6 +33,7 @@ interface ToolbarProps {
   onSaveFile: () => void;
   onSaveAsFile: () => void;
   onPrint?: () => void;
+  onCopyRichHtml?: () => void;
   viewMode: ViewMode;
   onToggleViewMode: (mode: ViewMode) => void;
   theme: 'light' | 'dark';
@@ -56,6 +58,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onSaveFile,
   onSaveAsFile,
   onPrint,
+  onCopyRichHtml,
   viewMode,
   onToggleViewMode,
   theme,
@@ -141,6 +144,16 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           <Printer size={18} />
         </button>
 
+        {onCopyRichHtml && (
+          <button
+            onClick={onCopyRichHtml}
+            className="p-2 bg-purple-900/40 hover:bg-purple-900/60 text-purple-300 rounded-lg transition-colors border border-purple-800/40 flex items-center justify-center"
+            title="서식 복사 (블로그/노션/워드 붙여넣기용 Rich HTML 복사 - Ctrl+Shift+C)"
+          >
+            <ClipboardCopy size={18} />
+          </button>
+        )}
+
         {/* Recent Files Dropdown Menu */}
         <div className="relative" ref={dropdownRef}>
           <button
@@ -154,60 +167,62 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
           {/* Dropdown Menu Popup */}
           {dropdownOpen && (
-            <div className="absolute left-0 mt-2 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 z-50 overflow-hidden">
-              <div className="px-3 py-1.5 border-b border-gray-700 text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center justify-between">
-                <span>Recent Files</span>
+            <div className="absolute left-0 mt-2 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-xl py-1 z-50 overflow-hidden max-h-80 flex flex-col">
+              <div className="px-3 py-1.5 border-b border-gray-700 text-[11px] font-bold uppercase tracking-wider text-gray-400 flex items-center justify-between shrink-0">
+                <span>Recent Files ({recentFiles.length})</span>
                 <span className="text-[10px] font-normal text-gray-500">우클릭: 삭제</span>
               </div>
               
-              {recentFiles.length === 0 ? (
-                <div className="px-3 py-3 text-xs text-gray-500 italic text-center">
-                  Recent list is empty
-                </div>
-              ) : (
-                recentFiles.map((file, idx) => (
-                  <div
-                    key={`${file.name}-${idx}`}
-                    onClick={() => {
-                      onSelectRecentFile(file);
-                      setDropdownOpen(false);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      onRemoveRecentFile(file.name);
-                    }}
-                    className={`flex items-center justify-between px-3 py-2 text-xs font-medium cursor-pointer transition-colors ${
-                      file.name === fileName
-                        ? 'bg-blue-900/50 text-blue-400 font-bold border-l-3 border-blue-500'
-                        : 'text-gray-200 hover:bg-gray-700 hover:text-white'
-                    }`}
-                    title={`좌클릭: 불러오기 / 우클릭: 리스트에서 제거`}
-                  >
-                    <div className="flex items-center space-x-2 truncate flex-1 min-w-0 pr-2">
-                      <FileText size={14} className={`shrink-0 ${file.name === fileName ? 'text-blue-400' : 'text-gray-400'}`} />
-                      <span className="truncate">{file.name}</span>
-                    </div>
-
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
+              <div className="overflow-y-auto flex-1">
+                {recentFiles.length === 0 ? (
+                  <div className="px-3 py-3 text-xs text-gray-500 italic text-center">
+                    Recent list is empty
+                  </div>
+                ) : (
+                  recentFiles.map((file, idx) => (
+                    <div
+                      key={`${file.name}-${idx}`}
+                      onClick={() => {
+                        onSelectRecentFile(file);
+                        setDropdownOpen(false);
+                      }}
+                      onContextMenu={(e) => {
+                        e.preventDefault();
                         onRemoveRecentFile(file.name);
                       }}
-                      className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-600 rounded transition-colors"
-                      title="문서 제거"
+                      className={`flex items-center justify-between px-3 py-2 text-xs font-medium cursor-pointer transition-colors ${
+                        file.name === fileName
+                          ? 'bg-blue-900/50 text-blue-400 font-bold border-l-3 border-blue-500'
+                          : 'text-gray-200 hover:bg-gray-700 hover:text-white'
+                      }`}
+                      title={`좌클릭: 불러오기 / 우클릭: 리스트에서 제거`}
                     >
-                      <X size={13} />
-                    </button>
-                  </div>
-                ))
-              )}
+                      <div className="flex items-center space-x-2 truncate flex-1 min-w-0 pr-2">
+                        <FileText size={14} className={`shrink-0 ${file.name === fileName ? 'text-blue-400' : 'text-gray-400'}`} />
+                        <span className="truncate">{file.name}</span>
+                      </div>
+
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onRemoveRecentFile(file.name);
+                        }}
+                        className="p-1 text-gray-400 hover:text-red-400 hover:bg-gray-600 rounded transition-colors"
+                        title="문서 제거"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           )}
         </div>
 
         <div className="hidden md:flex items-center space-x-2 pl-2 border-l border-gray-600 truncate max-w-sm">
           <span className="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shadow-2xs shrink-0">
-            v1.8.8
+            v1.9.1
           </span>
           <span className="text-sm font-bold text-gray-200 truncate">
             {fileName || "문서를 선택하세요"}

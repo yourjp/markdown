@@ -11,3 +11,12 @@ export interface RecentFile {
   content: string;
   timestamp: number;
 }
+
+export interface TabDocument {
+  id: string;
+  name: string;
+  content: string;
+  timestamp: number;
+  isModified?: boolean;
+}
+

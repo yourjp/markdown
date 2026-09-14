@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Toolbar } from './components/Toolbar';
+import { TabBar } from './components/TabBar';
 import { TableOfContents } from './components/TableOfContents';
 import { MarkdownSource } from './components/MarkdownSource';
 import { MarkdownView } from './components/MarkdownView';
@@ -10,7 +11,7 @@ import { FloatingMenu } from './components/FloatingMenu';
 import { useHeadings } from './hooks/useHeadings';
 import { useActiveHeading } from './hooks/useActiveHeading';
 import { useTheme } from './hooks/useTheme';
-import { ViewMode, RecentFile } from './types';
+import { ViewMode, RecentFile, TabDocument } from './types';
 
 const DEFAULT_SAMPLE_MD = `# Markdown Viewer 앱 개발 계획
 
@@ -85,9 +86,101 @@ Windows 환경에서 로컬 Markdown 문서를 빠르고 편리하게 열람할 
 + [x] 플러스 기호 체크박스 완료 항목
 `;
 
+// Helper to retrieve the last opened/edited markdown tabs from localStorage
+const getInitialTabsAndDoc = (): { tabs: TabDocument[]; activeTabId: string; recentFiles: RecentFile[] } => {
+  try {
+    const savedTabs = localStorage.getItem('openTabs');
+    const savedActiveId = localStorage.getItem('activeTabId');
+    const savedRecent = localStorage.getItem('recentFiles');
+    const recentFiles: RecentFile[] = savedRecent ? JSON.parse(savedRecent) : [];
+
+    if (savedTabs) {
+      const parsedTabs: TabDocument[] = JSON.parse(savedTabs);
+      if (Array.isArray(parsedTabs) && parsedTabs.length > 0) {
+        const activeTabId = (savedActiveId && parsedTabs.some((t) => t.id === savedActiveId)) ? savedActiveId : parsedTabs[0].id;
+        return {
+          tabs: parsedTabs,
+          activeTabId,
+          recentFiles: recentFiles.length > 0 ? recentFiles : [{ name: parsedTabs[0].name, content: parsedTabs[0].content, timestamp: parsedTabs[0].timestamp }],
+        };
+      }
+    }
+
+    if (recentFiles.length > 0) {
+      const activeName = localStorage.getItem('activeFileName');
+      const found = activeName ? recentFiles.find((f) => f.name === activeName) : recentFiles[0];
+      const target = found || recentFiles[0];
+      const tab: TabDocument = {
+        id: 'tab-init-' + Date.now(),
+        name: target.name,
+        content: target.content,
+        timestamp: target.timestamp || Date.now(),
+      };
+      return {
+        tabs: [tab],
+        activeTabId: tab.id,
+        recentFiles,
+      };
+    }
+  } catch (e) {
+    console.error('Failed to load initial tabs:', e);
+  }
+
+  const defaultTab: TabDocument = {
+    id: 'tab-default',
+    name: 'markdown-app.md',
+    content: DEFAULT_SAMPLE_MD,
+    timestamp: Date.now(),
+  };
+  return {
+    tabs: [defaultTab],
+    activeTabId: defaultTab.id,
+    recentFiles: [{ name: 'markdown-app.md', content: DEFAULT_SAMPLE_MD, timestamp: Date.now() }],
+  };
+};
+
 export function App() {
-  const [markdown, setMarkdown] = useState<string>(DEFAULT_SAMPLE_MD);
-  const [fileName, setFileName] = useState<string>('markdown-app.md');
+  const [initialData] = useState(() => getInitialTabsAndDoc());
+  const [tabs, setTabs] = useState<TabDocument[]>(initialData.tabs);
+  const [activeTabId, setActiveTabId] = useState<string>(initialData.activeTabId);
+  const [recentFiles, setRecentFiles] = useState<RecentFile[]>(initialData.recentFiles);
+
+  // Derived active tab
+  const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0] || {
+    id: 'fallback',
+    name: 'markdown-app.md',
+    content: DEFAULT_SAMPLE_MD,
+    timestamp: Date.now(),
+  };
+
+  const fileName = activeTab.name;
+  const markdown = activeTab.content;
+  const lastModifiedTime = activeTab.timestamp;
+
+  // Toast notification state
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<number | null>(null);
+
+  const showToast = (msg: string) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToastMessage(msg);
+    toastTimeoutRef.current = window.setTimeout(() => {
+      setToastMessage(null);
+    }, 2800);
+  };
+
+  // Sync openTabs & activeTabId with localStorage
+  useEffect(() => {
+    localStorage.setItem('openTabs', JSON.stringify(tabs));
+  }, [tabs]);
+
+  useEffect(() => {
+    localStorage.setItem('activeTabId', activeTabId);
+    if (activeTab) {
+      localStorage.setItem('activeFileName', activeTab.name);
+    }
+  }, [activeTabId, activeTab]);
+
   const [tocOpen, setTocOpen] = useState<boolean>(() => {
     return localStorage.getItem('tocOpen') !== 'false';
   });
@@ -101,21 +194,6 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [splitRatio, setSplitRatio] = useState<number>(50);
 
-  // Recent files state (Max 3 items)
-  const [recentFiles, setRecentFiles] = useState<RecentFile[]>(() => {
-    try {
-      const saved = localStorage.getItem('recentFiles');
-      if (saved) {
-        return JSON.parse(saved);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-    return [
-      { name: 'markdown-app.md', content: DEFAULT_SAMPLE_MD, timestamp: Date.now() }
-    ];
-  });
-
   const { theme, toggleTheme } = useTheme();
   const headings = useHeadings(markdown);
   const mainContentRef = useRef<HTMLDivElement>(null);
@@ -125,22 +203,130 @@ export function App() {
 
   const isSyncingScroll = useRef<boolean>(false);
 
-  const [lastModifiedTime, setLastModifiedTime] = useState<number>(Date.now());
-
-  // Helper to update markdown and last modified time
+  // Helper to update markdown and last modified time + auto-persist to localStorage
   const updateMarkdown = (newContent: string) => {
-    setMarkdown(newContent);
-    setLastModifiedTime(Date.now());
-  };
+    const now = Date.now();
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === activeTabId
+          ? { ...t, content: newContent, timestamp: now, isModified: true }
+          : t
+      )
+    );
 
-  // Helper to add or update recent files (Max 3)
-  const addRecentFile = (name: string, content: string, time = Date.now()) => {
     setRecentFiles((prev) => {
-      const filtered = prev.filter((f) => f.name !== name);
-      const updated = [{ name, content, timestamp: time }, ...filtered].slice(0, 3);
+      const existingIdx = prev.findIndex((f) => f.name === fileName);
+      let updated: RecentFile[];
+      if (existingIdx !== -1) {
+        updated = prev.map((f, i) =>
+          i === existingIdx ? { ...f, content: newContent, timestamp: now } : f
+        );
+      } else {
+        updated = [{ name: fileName, content: newContent, timestamp: now }, ...prev].slice(0, 10);
+      }
       localStorage.setItem('recentFiles', JSON.stringify(updated));
       return updated;
     });
+  };
+
+  // Helper to add or update recent files (Max 10)
+  const addRecentFile = (name: string, content: string, time = Date.now()) => {
+    localStorage.setItem('activeFileName', name);
+    setRecentFiles((prev) => {
+      const filtered = prev.filter((f) => f.name !== name);
+      const updated = [{ name, content, timestamp: time }, ...filtered].slice(0, 10);
+      localStorage.setItem('recentFiles', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  // Open or switch tab helper
+  const openOrSwitchTab = (name: string, content: string, modTime = Date.now()) => {
+    const existing = tabs.find((t) => t.name === name);
+    if (existing) {
+      setTabs((prev) =>
+        prev.map((t) => (t.id === existing.id ? { ...t, content, timestamp: modTime, isModified: false } : t))
+      );
+      setActiveTabId(existing.id);
+    } else {
+      if (tabs.length === 1 && (tabs[0].name === 'markdown-app.md' || tabs[0].name.startsWith('새문서')) && !tabs[0].isModified) {
+        const replacedTab: TabDocument = {
+          id: tabs[0].id,
+          name,
+          content,
+          timestamp: modTime,
+          isModified: false,
+        };
+        setTabs([replacedTab]);
+        setActiveTabId(replacedTab.id);
+      } else {
+        const newTab: TabDocument = {
+          id: 'tab-' + Date.now(),
+          name,
+          content,
+          timestamp: modTime,
+          isModified: false,
+        };
+        setTabs((prev) => [...prev, newTab]);
+        setActiveTabId(newTab.id);
+      }
+    }
+    addRecentFile(name, content, modTime);
+  };
+
+  // Tab Action Handlers
+  const handleSelectTab = (tabId: string) => {
+    setActiveTabId(tabId);
+  };
+
+  const handleNewTab = () => {
+    const nextNum = tabs.length + 1;
+    const newTab: TabDocument = {
+      id: 'tab-' + Date.now(),
+      name: `새문서_${nextNum}.md`,
+      content: `# 새 문서\n\n내용을 작성하세요.\n`,
+      timestamp: Date.now(),
+      isModified: true,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTab.id);
+    addRecentFile(newTab.name, newTab.content, newTab.timestamp);
+    showToast('📄 새 문서 탭이 생성되었습니다.');
+  };
+
+  const handleCloseTab = (tabId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (tabs.length === 1) {
+      const resetTab: TabDocument = {
+        id: 'tab-' + Date.now(),
+        name: '새문서_1.md',
+        content: '# 새 문서\n\n내용을 작성하세요.\n',
+        timestamp: Date.now(),
+        isModified: false,
+      };
+      setTabs([resetTab]);
+      setActiveTabId(resetTab.id);
+      return;
+    }
+
+    const closeIdx = tabs.findIndex((t) => t.id === tabId);
+    const newTabs = tabs.filter((t) => t.id !== tabId);
+    setTabs(newTabs);
+
+    if (activeTabId === tabId) {
+      const nextActive = newTabs[Math.max(0, closeIdx - 1)] || newTabs[0];
+      if (nextActive) setActiveTabId(nextActive.id);
+    }
+  };
+
+  const handleCycleTab = (direction: 'next' | 'prev') => {
+    if (tabs.length <= 1) return;
+    const curIdx = tabs.findIndex((t) => t.id === activeTabId);
+    if (curIdx === -1) return;
+    const nextIdx = direction === 'next'
+      ? (curIdx + 1) % tabs.length
+      : (curIdx - 1 + tabs.length) % tabs.length;
+    setActiveTabId(tabs[nextIdx].id);
   };
 
   // Helper to remove recent file (Right click context menu)
@@ -151,13 +337,9 @@ export function App() {
 
       if (fileName === nameToRemove) {
         if (updated.length > 0) {
-          setFileName(updated[0].name);
-          setMarkdown(updated[0].content);
-          setLastModifiedTime(updated[0].timestamp || Date.now());
+          openOrSwitchTab(updated[0].name, updated[0].content, updated[0].timestamp || Date.now());
         } else {
-          setFileName('markdown-app.md');
-          setMarkdown(DEFAULT_SAMPLE_MD);
-          setLastModifiedTime(Date.now());
+          openOrSwitchTab('markdown-app.md', DEFAULT_SAMPLE_MD, Date.now());
         }
       }
       return updated;
@@ -166,10 +348,7 @@ export function App() {
 
   // Select a recent file
   const handleSelectRecentFile = (file: RecentFile) => {
-    setFileName(file.name);
-    setMarkdown(file.content);
-    setLastModifiedTime(file.timestamp || Date.now());
-    addRecentFile(file.name, file.content, file.timestamp || Date.now());
+    openOrSwitchTab(file.name, file.content, file.timestamp || Date.now());
   };
 
   // Content-aware Heading Alignment Scroll Sync
@@ -270,15 +449,13 @@ export function App() {
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setFileName(file.name);
       const modTime = file.lastModified || Date.now();
-      setLastModifiedTime(modTime);
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target?.result as string;
-        if (text) {
-          setMarkdown(text);
-          addRecentFile(file.name, text, modTime);
+        if (text !== undefined) {
+          openOrSwitchTab(file.name, text, modTime);
+          showToast(`📂 "${file.name}" 문서를 열었습니다.`);
         }
       };
       reader.readAsText(file);
@@ -294,15 +471,13 @@ export function App() {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (file && (file.name.endsWith('.md') || file.name.endsWith('.txt') || file.type.startsWith('text/'))) {
-      setFileName(file.name);
       const modTime = file.lastModified || Date.now();
-      setLastModifiedTime(modTime);
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target?.result as string;
-        if (text) {
-          setMarkdown(text);
-          addRecentFile(file.name, text, modTime);
+        if (text !== undefined) {
+          openOrSwitchTab(file.name, text, modTime);
+          showToast(`📂 "${file.name}" 문서를 열었습니다.`);
         }
       };
       reader.readAsText(file);
@@ -347,23 +522,25 @@ export function App() {
         const writable = await handle.createWritable();
         await writable.write(markdown);
         await writable.close();
-        setFileName(handle.name);
         const now = Date.now();
-        setLastModifiedTime(now);
+        setTabs((prev) =>
+          prev.map((t) => (t.id === activeTabId ? { ...t, name: handle.name, timestamp: now, isModified: false } : t))
+        );
         addRecentFile(handle.name, markdown, now);
+        showToast(`💾 "${handle.name}" 저장 완료`);
         return;
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') return; // 사용자가 취소함
+      if (err.name === 'AbortError') return;
     }
 
-    // Fallback if File System Picker is unavailable or canceled/fails
     const targetName = prompt('저장할 파일 이름을 확인하세요:', fileName || 'document.md');
     if (!targetName) return;
 
-    setFileName(targetName);
     const now = Date.now();
-    setLastModifiedTime(now);
+    setTabs((prev) =>
+      prev.map((t) => (t.id === activeTabId ? { ...t, name: targetName, timestamp: now, isModified: false } : t))
+    );
     addRecentFile(targetName, markdown, now);
 
     const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
@@ -375,6 +552,7 @@ export function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    showToast(`💾 "${targetName}" 다운로드 저장 완료`);
   };
 
   // Save As Handler (Auto Versioning + File System Picker / Confirmation)
@@ -410,23 +588,25 @@ export function App() {
         const writable = await handle.createWritable();
         await writable.write(markdown);
         await writable.close();
-        setFileName(handle.name);
         const now = Date.now();
-        setLastModifiedTime(now);
+        setTabs((prev) =>
+          prev.map((t) => (t.id === activeTabId ? { ...t, name: handle.name, timestamp: now, isModified: false } : t))
+        );
         addRecentFile(handle.name, markdown, now);
+        showToast(`💾 "${handle.name}" 다른 이름으로 저장 완료`);
         return;
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') return; // 사용자가 취소함
+      if (err.name === 'AbortError') return;
     }
 
-    // Fallback if File System Picker is unavailable or canceled/fails
     const targetName = prompt('다른 이름으로 저장할 폴더/파일명을 확인하세요:', suggestedName);
     if (!targetName) return;
 
-    setFileName(targetName);
     const now = Date.now();
-    setLastModifiedTime(now);
+    setTabs((prev) =>
+      prev.map((t) => (t.id === activeTabId ? { ...t, name: targetName, timestamp: now, isModified: false } : t))
+    );
     addRecentFile(targetName, markdown, now);
 
     const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
@@ -438,6 +618,7 @@ export function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    showToast(`💾 "${targetName}" 다운로드 저장 완료`);
   };
 
   const [isHighlightMode, setIsHighlightMode] = useState<boolean>(false);
@@ -448,11 +629,111 @@ export function App() {
     window.print();
   };
 
+  // Rich HTML Copy Handler
+  const handleCopyRichHtml = async () => {
+    try {
+      const printArea = document.getElementById('markdown-print-area');
+      const renderedHtml = printArea ? printArea.innerHTML : mainContentRef.current?.innerHTML || '';
+
+      if (!renderedHtml) {
+        showToast('⚠️ 복사할 문서 내용이 없습니다.');
+        return;
+      }
+
+      const styledHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head><meta charset="utf-8"></head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #111827;">
+          ${renderedHtml}
+        </body>
+        </html>
+      `;
+
+      if (navigator.clipboard && window.ClipboardItem) {
+        const htmlBlob = new Blob([styledHtml], { type: 'text/html' });
+        const textBlob = new Blob([markdown], { type: 'text/plain' });
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': htmlBlob,
+            'text/plain': textBlob,
+          }),
+        ]);
+        showToast('✨ 서식 있는 HTML이 클립보드에 복사되었습니다! (노션/블로그 등에 붙여넣기 가능)');
+      } else {
+        await navigator.clipboard.writeText(markdown);
+        showToast('📋 텍스트가 클립보드에 복사되었습니다.');
+      }
+    } catch (err) {
+      console.error('Failed to copy rich HTML:', err);
+      try {
+        await navigator.clipboard.writeText(markdown);
+        showToast('📋 텍스트가 클립보드에 복사되었습니다.');
+      } catch (e) {
+        showToast('❌ 클립보드 복사에 실패했습니다.');
+      }
+    }
+  };
+
+  // Global Image Paste Handler (Ctrl + V)
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.indexOf('image') !== -1) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+              const base64Data = event.target?.result as string;
+              if (base64Data) {
+                const imageMarkdown = `\n\n![첨부 이미지](${base64Data})\n\n`;
+                const activeEl = document.activeElement;
+                if (activeEl && activeEl.tagName === 'TEXTAREA') {
+                  const textarea = activeEl as HTMLTextAreaElement;
+                  const start = textarea.selectionStart;
+                  const end = textarea.selectionEnd;
+                  const val = textarea.value;
+                  const newVal = val.substring(0, start) + imageMarkdown + val.substring(end);
+                  updateMarkdown(newVal);
+                } else {
+                  updateMarkdown(markdown + imageMarkdown);
+                }
+                showToast('📋 클립보드 이미지가 본문에 삽입되었습니다.');
+              }
+            };
+            reader.readAsDataURL(file);
+          }
+          break;
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [markdown, activeTabId]);
+
   // Keyboard Shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey || e.metaKey) {
-        if (e.key.toLowerCase() === 'o') {
+        if (e.shiftKey && e.key.toLowerCase() === 'c') {
+          e.preventDefault();
+          handleCopyRichHtml();
+        } else if (e.altKey && e.key.toLowerCase() === 'n') {
+          e.preventDefault();
+          handleNewTab();
+        } else if (e.altKey && e.key.toLowerCase() === 'w') {
+          e.preventDefault();
+          handleCloseTab(activeTabId);
+        } else if (e.key === 'Tab') {
+          e.preventDefault();
+          handleCycleTab(e.shiftKey ? 'prev' : 'next');
+        } else if (e.key.toLowerCase() === 'o') {
           e.preventDefault();
           handleOpenFileClick();
         } else if (e.key.toLowerCase() === 'p') {
@@ -495,7 +776,7 @@ export function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchOpen, isHighlightMode, isTaskMode, markdown, fileName]);
+  }, [searchOpen, isHighlightMode, isTaskMode, markdown, fileName, tabs, activeTabId]);
 
   // Helper function to escape regex special chars
   const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -733,7 +1014,7 @@ export function App() {
       }
 
       if (foundAndRemoved) {
-        setMarkdown(updatedMarkdown);
+        updateMarkdown(updatedMarkdown);
         selection.removeAllRanges();
         return;
       }
@@ -808,7 +1089,7 @@ export function App() {
       }
 
       if (replaced) {
-        setMarkdown(updatedMarkdown);
+        updateMarkdown(updatedMarkdown);
         selection.removeAllRanges();
       }
     };
@@ -898,6 +1179,7 @@ export function App() {
           onSaveFile={handleSaveFile}
           onSaveAsFile={handleSaveAsFile}
           onPrint={handlePrint}
+          onCopyRichHtml={handleCopyRichHtml}
           viewMode={viewMode}
           onToggleViewMode={(mode) => setViewMode(mode)}
           theme={theme}
@@ -913,6 +1195,15 @@ export function App() {
           onRemoveRecentFile={handleRemoveRecentFile}
         />
 
+        {/* Multi-Tab Navigation Bar */}
+        <TabBar
+          tabs={tabs}
+          activeTabId={activeTabId}
+          onSelectTab={handleSelectTab}
+          onCloseTab={handleCloseTab}
+          onNewTab={handleNewTab}
+        />
+
         {searchOpen && (
           <SearchBar
             searchQuery={searchQuery}
@@ -921,7 +1212,7 @@ export function App() {
           />
         )}
 
-        <div className="flex flex-1 h-[calc(100vh-3.5rem)] overflow-hidden">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Left Table of Contents Panel */}
           {tocOpen && (
             <TableOfContents
@@ -1097,6 +1388,13 @@ export function App() {
           }}
           onSwitchToViewMode={() => setViewMode('view')}
         />
+
+        {/* Floating Toast Notification */}
+        {toastMessage && (
+          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900 text-white border border-blue-500/70 shadow-2xl px-4 py-2.5 rounded-full text-xs font-bold flex items-center space-x-2 pointer-events-none animate-bounce">
+            <span>{toastMessage}</span>
+          </div>
+        )}
       </div>
 
       {/* Dedicated Print Area (Rendered exclusively during browser print) */}
