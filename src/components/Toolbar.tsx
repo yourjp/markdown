@@ -221,8 +221,14 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
 
         <div className="hidden md:flex items-center space-x-2 pl-2 border-l border-gray-600 truncate max-w-sm">
+          <img
+            src="/app-icon.png"
+            alt="Markdown Viewer Icon"
+            className="w-5 h-5 object-contain bg-white rounded p-0.5 shadow-xs shrink-0"
+            title="Markdown Viewer & Editor"
+          />
           <span className="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shadow-2xs shrink-0">
-            v1.9.1
+            v1.9.2
           </span>
           <span className="text-sm font-bold text-gray-200 truncate">
             {fileName || "문서를 선택하세요"}
