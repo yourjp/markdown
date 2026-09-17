@@ -92,10 +92,18 @@ const getInitialTabsAndDoc = (): { tabs: TabDocument[]; activeTabId: string; rec
     const savedTabs = localStorage.getItem('openTabs');
     const savedActiveId = localStorage.getItem('activeTabId');
     const savedRecent = localStorage.getItem('recentFiles');
-    const recentFiles: RecentFile[] = savedRecent ? JSON.parse(savedRecent) : [];
+    const recentFiles: RecentFile[] = savedRecent
+      ? JSON.parse(savedRecent).map((f: RecentFile) => ({
+          ...f,
+          content: f.content ? f.content.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : '',
+        }))
+      : [];
 
     if (savedTabs) {
-      const parsedTabs: TabDocument[] = JSON.parse(savedTabs);
+      const parsedTabs: TabDocument[] = JSON.parse(savedTabs).map((t: TabDocument) => ({
+        ...t,
+        content: t.content ? t.content.replace(/\r\n/g, '\n').replace(/\r/g, '\n') : '',
+      }));
       if (Array.isArray(parsedTabs) && parsedTabs.length > 0) {
         const activeTabId = (savedActiveId && parsedTabs.some((t) => t.id === savedActiveId)) ? savedActiveId : parsedTabs[0].id;
         return {
@@ -205,11 +213,12 @@ export function App() {
 
   // Helper to update markdown and last modified time + auto-persist to localStorage
   const updateMarkdown = (newContent: string) => {
+    const normalizedContent = newContent.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const now = Date.now();
     setTabs((prev) =>
       prev.map((t) =>
         t.id === activeTabId
-          ? { ...t, content: newContent, timestamp: now, isModified: true }
+          ? { ...t, content: normalizedContent, timestamp: now, isModified: true }
           : t
       )
     );
@@ -219,10 +228,10 @@ export function App() {
       let updated: RecentFile[];
       if (existingIdx !== -1) {
         updated = prev.map((f, i) =>
-          i === existingIdx ? { ...f, content: newContent, timestamp: now } : f
+          i === existingIdx ? { ...f, content: normalizedContent, timestamp: now } : f
         );
       } else {
-        updated = [{ name: fileName, content: newContent, timestamp: now }, ...prev].slice(0, 10);
+        updated = [{ name: fileName, content: normalizedContent, timestamp: now }, ...prev].slice(0, 10);
       }
       localStorage.setItem('recentFiles', JSON.stringify(updated));
       return updated;
@@ -231,10 +240,11 @@ export function App() {
 
   // Helper to add or update recent files (Max 10)
   const addRecentFile = (name: string, content: string, time = Date.now()) => {
+    const normalizedContent = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     localStorage.setItem('activeFileName', name);
     setRecentFiles((prev) => {
       const filtered = prev.filter((f) => f.name !== name);
-      const updated = [{ name, content, timestamp: time }, ...filtered].slice(0, 10);
+      const updated = [{ name, content: normalizedContent, timestamp: time }, ...filtered].slice(0, 10);
       localStorage.setItem('recentFiles', JSON.stringify(updated));
       return updated;
     });
@@ -242,10 +252,11 @@ export function App() {
 
   // Open or switch tab helper
   const openOrSwitchTab = (name: string, content: string, modTime = Date.now()) => {
+    const normalizedContent = content.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
     const existing = tabs.find((t) => t.name === name);
     if (existing) {
       setTabs((prev) =>
-        prev.map((t) => (t.id === existing.id ? { ...t, content, timestamp: modTime, isModified: false } : t))
+        prev.map((t) => (t.id === existing.id ? { ...t, content: normalizedContent, timestamp: modTime, isModified: false } : t))
       );
       setActiveTabId(existing.id);
     } else {
@@ -253,7 +264,7 @@ export function App() {
         const replacedTab: TabDocument = {
           id: tabs[0].id,
           name,
-          content,
+          content: normalizedContent,
           timestamp: modTime,
           isModified: false,
         };
@@ -263,7 +274,7 @@ export function App() {
         const newTab: TabDocument = {
           id: 'tab-' + Date.now(),
           name,
-          content,
+          content: normalizedContent,
           timestamp: modTime,
           isModified: false,
         };
@@ -271,7 +282,7 @@ export function App() {
         setActiveTabId(newTab.id);
       }
     }
-    addRecentFile(name, content, modTime);
+    addRecentFile(name, normalizedContent, modTime);
   };
 
   // Tab Action Handlers
@@ -454,7 +465,8 @@ export function App() {
       reader.onload = (event) => {
         const text = event.target?.result as string;
         if (text !== undefined) {
-          openOrSwitchTab(file.name, text, modTime);
+          const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+          openOrSwitchTab(file.name, normalized, modTime);
           showToast(`📂 "${file.name}" 문서를 열었습니다.`);
         }
       };
@@ -476,7 +488,8 @@ export function App() {
       reader.onload = (event) => {
         const text = event.target?.result as string;
         if (text !== undefined) {
-          openOrSwitchTab(file.name, text, modTime);
+          const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+          openOrSwitchTab(file.name, normalized, modTime);
           showToast(`📂 "${file.name}" 문서를 열었습니다.`);
         }
       };
@@ -842,7 +855,7 @@ export function App() {
       element = element.parentElement;
     }
 
-    const lines = markdown.split('\n');
+    const lines = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     let replaced = false;
 
     // A. If targetLineIndex is found, convert that specific line
@@ -1027,7 +1040,7 @@ export function App() {
         .map((str) => str.replace(/[\s\.\,\;\:\!\?]+$/, '').trim())
         .filter(Boolean);
 
-      const lines = markdown.split('\n');
+      const lines = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 
       for (const cleanSelectedStr of candidates) {
         if (replaced) break;
@@ -1106,7 +1119,7 @@ export function App() {
 
   // Handle Interactive Task List Item Checkbox Click (View Mode)
   const handleToggleTaskListItem = (sourceLineIndex: number, targetCheckedState: boolean, textContext?: string) => {
-    const lines = markdown.split('\n');
+    const lines = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     const newCheck = targetCheckedState ? 'x' : ' ';
     let replaced = false;
 

@@ -4,7 +4,12 @@ import { HeadingItem } from '../types';
 
 export function useHeadings(markdown: string): HeadingItem[] {
   return useMemo(() => {
-    const lines = markdown.split('\n');
+    if (!markdown) return [];
+
+    // Normalize Windows/Obsidian CRLF (and legacy CR) before parsing headings.
+    // Without this, a trailing \r can stay attached to heading lines and break
+    // strict heading regex/title cleanup in some editors and render paths.
+    const lines = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     const headings: HeadingItem[] = [];
     const slugger = new GithubSlugger();
 
@@ -21,13 +26,15 @@ export function useHeadings(markdown: string): HeadingItem[] {
           .replace(/[\*\_`~]/g, '')
           .trim();
         
-        const id = slugger.slug(cleanTitle);
+        if (cleanTitle) {
+          const id = slugger.slug(cleanTitle);
 
-        headings.push({
-          id,
-          title: cleanTitle,
-          level,
-        });
+          headings.push({
+            id,
+            title: cleanTitle,
+            level,
+          });
+        }
       }
     });
 

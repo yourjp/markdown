@@ -8,7 +8,7 @@ interface MarkdownSourceProps {
 
 export const MarkdownSource = forwardRef<HTMLDivElement, MarkdownSourceProps>(
   ({ markdown, onScroll }, ref) => {
-    const lines = markdown.split('\n');
+    const lines = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     const slugger = new GithubSlugger();
 
     return (

@@ -20,7 +20,7 @@ export const MarkdownInlineView = forwardRef<HTMLDivElement, MarkdownInlineViewP
     const [editValue, setEditValue] = useState<string>('');
     const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
-    const lines = markdown.split('\n');
+    const lines = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 
     // Focus input element when editing a line
     useEffect(() => {

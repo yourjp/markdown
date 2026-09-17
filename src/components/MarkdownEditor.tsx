@@ -8,7 +8,7 @@ interface MarkdownEditorProps {
 
 export const MarkdownEditor = forwardRef<HTMLDivElement, MarkdownEditorProps>(
   ({ markdown, onChange, onScroll }, ref) => {
-    const lines = markdown.split('\n');
+    const lines = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     const lineNumbersRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
 

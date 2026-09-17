@@ -228,7 +228,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             title="Markdown Viewer & Editor"
           />
           <span className="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shadow-2xs shrink-0">
-            v1.9.2
+            v1.9.3
           </span>
           <span className="text-sm font-bold text-gray-200 truncate">
             {fileName || "문서를 선택하세요"}
