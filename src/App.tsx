@@ -374,7 +374,7 @@ export function App() {
 
       return prev.map((t) =>
         t.id === activeTabId
-          ? { ...t, content: normalizedContent, timestamp: now, isModified: true }
+          ? { ...t, content: newContent, timestamp: now, isModified: true }
           : t
       );
     });
