@@ -374,7 +374,7 @@ export function App() {
 
       return prev.map((t) =>
         t.id === activeTabId
-          ? { ...t, content: newContent, timestamp: now, isModified: true }
+          ? { ...t, content: normalizedContent, timestamp: now, isModified: true }
           : t
       );
     });
@@ -1648,7 +1648,7 @@ export function App() {
       element = element.parentElement;
     }
 
-    const lines = markdown.split('\n');
+    const lines = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
     let replaced = false;
 
     // A. If targetLineIndex is found, convert that specific line
@@ -1833,7 +1833,7 @@ export function App() {
         .map((str) => str.replace(/[\s\.\,\;\:\!\?]+$/, '').trim())
         .filter(Boolean);
 
-      const lines = markdown.split('\n');
+      const lines = markdown.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
 
       for (const cleanSelectedStr of candidates) {
         if (replaced) break;
