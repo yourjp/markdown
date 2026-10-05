@@ -18,7 +18,7 @@ export const TabBar: React.FC<TabBarProps> = ({
   onNewTab,
 }) => {
   return (
-    <div className="h-9 bg-gray-900 border-b border-gray-700/80 px-2 flex items-center select-none z-10 overflow-x-auto shrink-0 scrollbar-none">
+    <div className="h-9 bg-gray-900 border-b border-gray-700/80 px-2 flex items-center select-none z-20 overflow-x-auto shrink-0 scrollbar-none">
       <div className="flex items-center space-x-1 min-w-0">
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
@@ -39,7 +39,14 @@ export const TabBar: React.FC<TabBarProps> = ({
               />
               <span className="truncate">{tab.name}</span>
 
-              {tab.isModified && (
+              {tab.hasExternalChange && (
+                <span
+                  className="w-2 h-2 rounded-full bg-cyan-400 ring-2 ring-cyan-400/40 shrink-0 shadow-xs animate-pulse"
+                  title="외부 프로그램에서 변경됨 (최신 내용 미반영)"
+                />
+              )}
+
+              {tab.isModified && !tab.hasExternalChange && (
                 <span
                   className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"
                   title="수정됨"

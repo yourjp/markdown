@@ -4,8 +4,16 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   base: './',
   plugins: [react()],
+  clearScreen: false,
+  test: {
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.ts',
+  },
   server: {
     port: 3000,
-    open: true
+    strictPort: true,
+    watch: {
+      ignored: ['**/src-tauri/**']
+    }
   }
 });

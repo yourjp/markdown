@@ -20,9 +20,11 @@ import {
   Edit3,
   Edit2,
   Printer,
-  ClipboardCopy
+  ClipboardCopy,
+  RotateCw,
+  Coffee
 } from 'lucide-react';
-import { ViewMode, RecentFile } from '../types';
+import { ViewMode, RecentFile, ThemeMode } from '../types';
 
 interface ToolbarProps {
   tocOpen: boolean;
@@ -30,13 +32,14 @@ interface ToolbarProps {
   fileName: string;
   lastModifiedTime?: number;
   onOpenFile: () => void;
+  onReloadFile?: () => void;
   onSaveFile: () => void;
   onSaveAsFile: () => void;
   onPrint?: () => void;
   onCopyRichHtml?: () => void;
   viewMode: ViewMode;
   onToggleViewMode: (mode: ViewMode) => void;
-  theme: 'light' | 'dark';
+  theme: ThemeMode;
   onToggleTheme: () => void;
   searchOpen: boolean;
   onToggleSearch: () => void;
@@ -55,6 +58,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   fileName,
   lastModifiedTime,
   onOpenFile,
+  onReloadFile,
   onSaveFile,
   onSaveAsFile,
   onPrint,
@@ -101,24 +105,38 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   const formattedTime = formatTime(lastModifiedTime);
 
   return (
-    <header className="h-14 bg-gray-800 border-b border-gray-700 px-4 flex items-center justify-between select-none z-10 shadow-sm shrink-0 text-gray-200">
+    <header className="h-14 bg-gray-800 border-b border-gray-700 px-4 flex items-center justify-between select-none z-30 shadow-sm shrink-0 text-gray-200">
       {/* Left controls */}
       <div className="flex items-center space-x-3">
         <button
           onClick={onToggleToc}
           title={tocOpen ? "목차 닫기 (Ctrl+B)" : "목차 열기 (Ctrl+B)"}
-          className="p-2 rounded-lg hover:bg-gray-700 text-gray-300 transition-colors"
+          className={`p-2 rounded-lg transition-colors ${
+            tocOpen
+              ? 'bg-blue-600/40 text-blue-300 border border-blue-500/50 hover:bg-blue-600/60'
+              : 'hover:bg-gray-700 text-gray-400 border border-transparent'
+          }`}
         >
           {tocOpen ? <PanelLeftClose size={20} /> : <PanelLeftOpen size={20} />}
         </button>
 
         <button
           onClick={onOpenFile}
-          className="p-2 bg-blue-900/40 hover:bg-blue-900/60 text-blue-400 rounded-lg transition-colors border border-blue-800/40 flex items-center justify-center"
+          className="p-2 bg-blue-900/40 hover:bg-blue-900/60 text-blue-400 rounded-lg transition-colors border border-blue-800/40 flex items-center justify-center cursor-pointer"
           title="로컬 Markdown 파일 열기 (Ctrl+O)"
         >
           <FolderOpen size={18} />
         </button>
+
+        {onReloadFile && (
+          <button
+            onClick={onReloadFile}
+            className="p-2 bg-slate-700/60 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg transition-colors border border-slate-600/50 flex items-center justify-center cursor-pointer"
+            title="현재 파일 디스크에서 다시 불러오기 (Ctrl+R / F5)"
+          >
+            <RotateCw size={18} />
+          </button>
+        )}
 
         <button
           onClick={onSaveFile}
@@ -228,7 +246,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             title="Markdown Viewer & Editor"
           />
           <span className="bg-blue-600/30 text-blue-300 border border-blue-500/40 text-[11px] font-mono font-bold px-1.5 py-0.5 rounded shadow-2xs shrink-0">
-            v1.9.2
+            v1.36.1
           </span>
           <span className="text-sm font-bold text-gray-200 truncate">
             {fileName || "문서를 선택하세요"}
@@ -244,7 +262,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       {/* All 5 Modes Displayed as Compact Icon Buttons */}
       <div className="flex items-center bg-gray-900/60 p-1 rounded-lg border border-gray-700/80 shadow-inner space-x-1 shrink-0">
         {[
-          { mode: 'source' as ViewMode, icon: <Code size={16} />, label: 'Source', desc: '소스 전용' },
+          { mode: 'source' as ViewMode, icon: <Code size={16} />, label: 'Source', desc: '소스 편집' },
           { mode: 'edit' as ViewMode, icon: <Edit3 size={16} />, label: 'Edit', desc: '실시간 분할 편집' },
           { mode: 'inline' as ViewMode, icon: <Edit2 size={16} />, label: 'Inline', desc: '인라인 즉시 편집' },
           { mode: 'view' as ViewMode, icon: <Eye size={16} />, label: 'View', desc: '뷰 렌더링 독서' },
@@ -311,13 +329,24 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         {/* Theme Switcher Button */}
         <button
           onClick={onToggleTheme}
-          title={theme === 'dark' ? "라이트 모드로 변경" : "다크 모드로 변경"}
-          className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-gray-200 text-xs font-bold rounded-lg shadow-sm transition-all"
+          title={
+            theme === 'light'
+              ? "세피아(아이케어) 모드로 변경 (클릭)"
+              : theme === 'sepia'
+              ? "다크 모드로 변경 (클릭)"
+              : "화이트 모드로 변경 (클릭)"
+          }
+          className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 bg-gray-700 hover:bg-gray-600 border border-gray-600 text-gray-200 text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer"
         >
-          {theme === 'dark' ? (
+          {theme === 'light' ? (
             <>
               <Sun size={16} className="text-yellow-400" />
               <span className="hidden md:inline">화이트 모드</span>
+            </>
+          ) : theme === 'sepia' ? (
+            <>
+              <Coffee size={16} className="text-amber-400" />
+              <span className="hidden md:inline text-amber-200">세피아 모드</span>
             </>
           ) : (
             <>

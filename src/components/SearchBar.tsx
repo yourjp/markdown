@@ -13,7 +13,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
   onClose,
 }) => {
   return (
-    <div className="bg-blue-50 dark:bg-gray-800 border-b border-blue-200 dark:border-gray-700 px-4 py-2 flex items-center justify-between shadow-inner">
+    <div className="bg-blue-50 dark:bg-gray-800 border-b border-blue-200 dark:border-gray-700 px-4 py-2 flex items-center justify-between shadow-inner search-bar-root">
       <div className="flex items-center space-x-2 flex-1 max-w-md">
         <input
           type="text"
@@ -21,7 +21,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="문서 내 키워드 검색..."
           autoFocus
-          className="w-full px-3 py-1.5 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100"
+          className="w-full px-3 py-1.5 text-sm bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100 search-bar-input"
         />
       </div>
 

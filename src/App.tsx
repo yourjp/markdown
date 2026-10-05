@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useDeferredValue } from 'react';
 import { Toolbar } from './components/Toolbar';
 import { TabBar } from './components/TabBar';
 import { TableOfContents } from './components/TableOfContents';
@@ -8,10 +8,15 @@ import { MarkdownEditor } from './components/MarkdownEditor';
 import { MarkdownInlineView } from './components/MarkdownInlineView';
 import { SearchBar } from './components/SearchBar';
 import { FloatingMenu } from './components/FloatingMenu';
+import { ExternalChangeBanner } from './components/ExternalChangeBanner';
+import { embedImageDataUrlInMarkdown } from './utils/markdownEmbeds';
+import { adjustBookmarksOnContentChange } from './utils/bookmarkTracking';
 import { useHeadings } from './hooks/useHeadings';
 import { useActiveHeading } from './hooks/useActiveHeading';
 import { useTheme } from './hooks/useTheme';
-import { ViewMode, RecentFile, TabDocument } from './types';
+import { ViewMode, RecentFile, TabDocument, BookmarkItem } from './types';
+import { Bookmark, Copy, CheckSquare, Highlighter } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 
 const DEFAULT_SAMPLE_MD = `# Markdown Viewer 앱 개발 계획
 
@@ -37,12 +42,12 @@ Windows 환경에서 로컬 Markdown 문서를 빠르고 편리하게 열람할 
 
 \`\`\`text
 ┌──────────────────────────────────────────────────────────────┐
-│ ☰  Markdown Viewer                           🔍   🌙         │
+│ [≡] Markdown Viewer                         [Search] [Theme] │
 ├────────────────┬─────────────────────────────────────────────┤
 │ TABLE OF       │                                             │
 │ CONTENTS       │  # Markdown Viewer                          │
 │                │                                             │
-│ 1. Overview    │  Markdown 본문                              │
+│ 1. Overview    │  Markdown Body                              │
 │                │                                             │
 │ 2. Install     │  ## Install                                 │
 │   2.1 Windows  │                                             │
@@ -73,6 +78,21 @@ Windows 환경에서 로컬 Markdown 문서를 빠르고 편리하게 열람할 
 - 스크롤을 내릴 때 현재 읽고 있는 섹션이 목차에서 **자동 강조**됩니다.
 - **\`Ctrl + B\`** 또는 툴바의 버튼을 눌러 목차 패널을 토글할 수 있습니다.
 
+### 3.4 옵시디언 & 깃허브 콜아웃 박스 (Callout Cards)
+> [!tip] 💡 유용한 팁 (옵시디언 호환)
+> - **BudapestGO**: 부다페스트 대중교통 노선 및 시간표 확인
+> - **PID Lítačka**: 프라하/체코 대중교통 노선 및 티켓 확인
+> - **Wiener Linien**: 비엔나 실시간 교통편 확인
+
+> [!note] ℹ️ 참고 사항
+> 콜아웃 블록은 \`> [!tip]\`, \`> [!note]\`, \`> [!warning]\`, \`> [!danger]\`, \`> [!success]\`, \`> [!info]\` 등 20여 종의 키워드를 지원합니다.
+
+> [!warning] ⚠️ 주의 사항
+> 환전소 이용 시 수수료율을 반드시 먼저 확인하세요.
+
+> [!tip]+ 접을 수 있는 콜아웃 예시 (클릭하여 접기/펼치기)
+> \`+\` 또는 \`-\` 기호를 붙이면 (\`> [!tip]+\`) 헤더를 클릭해 본문을 여닫을 수 있습니다.
+
 ### 3.5 할 일 목록 (Task List 체크박스 1-클릭 테스트)
 - [ ] 아침 운동하기 (30분 산책)
 - [x] 메일함 확인 및 중요 메일 회신
@@ -86,16 +106,49 @@ Windows 환경에서 로컬 Markdown 문서를 빠르고 편리하게 열람할 
 + [x] 플러스 기호 체크박스 완료 항목
 `;
 
+// Helper to auto-fix legacy misaligned box-drawing diagrams in sample documents
+const sanitizeSampleDiagram = (content: string): string => {
+  if (!content) return content;
+  if (content.includes('┌────────') && (content.includes('Markdown Viewer') || content.includes('TABLE OF'))) {
+    return content.replace(
+      /┌[─\s\S]*?└[─┴\s\S]*?┘/g,
+`┌──────────────────────────────────────────────────────────────┐
+│ [≡] Markdown Viewer                         [Search] [Theme] │
+├────────────────┬─────────────────────────────────────────────┤
+│ TABLE OF       │                                             │
+│ CONTENTS       │  # Markdown Viewer                          │
+│                │                                             │
+│ 1. Overview    │  Markdown Body                              │
+│                │                                             │
+│ 2. Install     │  ## Install                                 │
+│   2.1 Windows  │                                             │
+│   2.2 Linux    │  ...                                        │
+│                │                                             │
+│ 3. Usage       │                                             │
+│   3.1 Basic    │                                             │
+│   3.2 Advanced │                                             │
+│                │                                             │
+└────────────────┴─────────────────────────────────────────────┘`
+    );
+  }
+  return content;
+};
+
 // Helper to retrieve the last opened/edited markdown tabs from localStorage
 const getInitialTabsAndDoc = (): { tabs: TabDocument[]; activeTabId: string; recentFiles: RecentFile[] } => {
   try {
     const savedTabs = localStorage.getItem('openTabs');
     const savedActiveId = localStorage.getItem('activeTabId');
     const savedRecent = localStorage.getItem('recentFiles');
-    const recentFiles: RecentFile[] = savedRecent ? JSON.parse(savedRecent) : [];
+    const recentFiles: RecentFile[] = savedRecent
+      ? JSON.parse(savedRecent).map((f: RecentFile) => ({ ...f, content: sanitizeSampleDiagram(f.content) }))
+      : [];
 
     if (savedTabs) {
-      const parsedTabs: TabDocument[] = JSON.parse(savedTabs);
+      const parsedTabs: TabDocument[] = JSON.parse(savedTabs).map((t: TabDocument) => ({
+        ...t,
+        content: sanitizeSampleDiagram(t.content),
+      }));
       if (Array.isArray(parsedTabs) && parsedTabs.length > 0) {
         const activeTabId = (savedActiveId && parsedTabs.some((t) => t.id === savedActiveId)) ? savedActiveId : parsedTabs[0].id;
         return {
@@ -113,8 +166,9 @@ const getInitialTabsAndDoc = (): { tabs: TabDocument[]; activeTabId: string; rec
       const tab: TabDocument = {
         id: 'tab-init-' + Date.now(),
         name: target.name,
-        content: target.content,
+        content: sanitizeSampleDiagram(target.content),
         timestamp: target.timestamp || Date.now(),
+        filePath: target.filePath,
       };
       return {
         tabs: [tab],
@@ -161,17 +215,33 @@ export function App() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<number | null>(null);
 
+  // External File Change Detection State (e.g. modified by Obsidian, VS Code, etc.)
+  const [externalChange, setExternalChange] = useState<{
+    tabId: string;
+    fileName: string;
+    mtime: number;
+    diskContent: string;
+  } | null>(null);
+  const dismissedExternalChanges = useRef<Record<string, number>>({});
+
   const showToast = (msg: string) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToastMessage(msg);
     toastTimeoutRef.current = window.setTimeout(() => {
       setToastMessage(null);
-    }, 2800);
+    }, 3800);
   };
 
-  // Sync openTabs & activeTabId with localStorage
+  // Debounced Sync openTabs & activeTabId with localStorage (prevents disk I/O lag on typing)
   useEffect(() => {
-    localStorage.setItem('openTabs', JSON.stringify(tabs));
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem('openTabs', JSON.stringify(tabs));
+      } catch (err) {
+        console.error('Failed to save openTabs to localStorage', err);
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
   }, [tabs]);
 
   useEffect(() => {
@@ -181,9 +251,33 @@ export function App() {
     }
   }, [activeTabId, activeTab]);
 
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        localStorage.setItem('recentFiles', JSON.stringify(recentFiles));
+      } catch (err) {
+        console.error('Failed to save recentFiles to localStorage', err);
+      }
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [recentFiles]);
+
   const [tocOpen, setTocOpen] = useState<boolean>(() => {
     return localStorage.getItem('tocOpen') !== 'false';
   });
+
+  useEffect(() => {
+    localStorage.setItem('tocOpen', String(tocOpen));
+  }, [tocOpen]);
+
+  const [tocWidth, setTocWidth] = useState<number>(() => {
+    const saved = localStorage.getItem('tocWidth');
+    return saved ? parseInt(saved, 10) : 280;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('tocWidth', String(tocWidth));
+  }, [tocWidth]);
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     const saved = localStorage.getItem('viewMode') as ViewMode;
     if (saved === 'source' || saved === 'view' || saved === 'split') return saved;
@@ -195,84 +289,229 @@ export function App() {
   const [splitRatio, setSplitRatio] = useState<number>(50);
 
   const { theme, toggleTheme } = useTheme();
-  const headings = useHeadings(markdown);
+  // Deferred Markdown value for non-blocking concurrent rendering of TOC and live preview
+  const deferredMarkdown = useDeferredValue(markdown);
+  const headings = useHeadings(deferredMarkdown);
   const mainContentRef = useRef<HTMLDivElement>(null);
-  const sourceRef = useRef<HTMLDivElement>(null);
+  const sourceRef = useRef<HTMLTextAreaElement>(null);
   const [activeHeadingId, setActiveHeadingId] = useActiveHeading(headings, mainContentRef);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const isSyncingScroll = useRef<boolean>(false);
 
-  // Helper to update markdown and last modified time + auto-persist to localStorage
-  const updateMarkdown = (newContent: string) => {
+  // Bookmarks State mapped by document key (filePath or tab name)
+  const [docBookmarksMap, setDocBookmarksMap] = useState<Record<string, BookmarkItem[]>>(() => {
+    try {
+      const saved = localStorage.getItem('markdown_app_bookmarks');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  // Current active document key
+  const currentDocKey = activeTab?.filePath || activeTab?.name || fileName || 'default';
+  const currentBookmarks = docBookmarksMap[currentDocKey] || (activeTab?.name ? docBookmarksMap[activeTab.name] : undefined) || [];
+
+  // Context Menu state for right click on markdown content
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean;
+    x: number;
+    y: number;
+    targetLineIndex: number;
+    selectedText: string;
+    lineText: string;
+  } | null>(null);
+
+  // Sync bookmarks to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('markdown_app_bookmarks', JSON.stringify(docBookmarksMap));
+    } catch (e) {
+      console.warn('Failed to save bookmarks:', e);
+    }
+  }, [docBookmarksMap]);
+
+  // Close context menu on outside click or scroll
+  useEffect(() => {
+    const handleDismissContextMenu = (e: MouseEvent) => {
+      if ((e.target as HTMLElement)?.closest?.('.custom-context-menu')) return;
+      setContextMenu(null);
+    };
+    const handleScrollDismiss = () => {
+      setContextMenu(null);
+    };
+
+    window.addEventListener('mousedown', handleDismissContextMenu);
+    window.addEventListener('scroll', handleScrollDismiss, true);
+    return () => {
+      window.removeEventListener('mousedown', handleDismissContextMenu);
+      window.removeEventListener('scroll', handleScrollDismiss, true);
+    };
+  }, []);
+
+  // Helper to update markdown and last modified time (localStorage writes debounced)
+  const updateMarkdown = useCallback((newContent: string) => {
     const now = Date.now();
-    setTabs((prev) =>
-      prev.map((t) =>
+    setTabs((prev) => {
+      const currentTab = prev.find((t) => t.id === activeTabId);
+      const oldContent = currentTab ? currentTab.content : '';
+
+      // Auto-adjust bookmark line positions when line count or structure changes
+      if (oldContent && oldContent !== newContent) {
+        setDocBookmarksMap((bmPrev) => {
+          const docKey = currentTab?.filePath || currentTab?.name || fileName || 'default';
+          const currentBms = bmPrev[docKey] || (currentTab?.name ? bmPrev[currentTab.name] : undefined) || [];
+          if (!currentBms || currentBms.length === 0) return bmPrev;
+
+          const adjusted = adjustBookmarksOnContentChange(currentBms, oldContent, newContent);
+          const res: Record<string, BookmarkItem[]> = { ...bmPrev, [docKey]: adjusted };
+          if (currentTab?.name && currentTab.name !== docKey) {
+            res[currentTab.name] = adjusted;
+          }
+          return res;
+        });
+      }
+
+      return prev.map((t) =>
         t.id === activeTabId
           ? { ...t, content: newContent, timestamp: now, isModified: true }
           : t
-      )
-    );
+      );
+    });
 
     setRecentFiles((prev) => {
       const existingIdx = prev.findIndex((f) => f.name === fileName);
-      let updated: RecentFile[];
       if (existingIdx !== -1) {
-        updated = prev.map((f, i) =>
+        return prev.map((f, i) =>
           i === existingIdx ? { ...f, content: newContent, timestamp: now } : f
         );
       } else {
-        updated = [{ name: fileName, content: newContent, timestamp: now }, ...prev].slice(0, 10);
+        return [{ name: fileName, content: newContent, timestamp: now }, ...prev].slice(0, 10);
       }
-      localStorage.setItem('recentFiles', JSON.stringify(updated));
-      return updated;
     });
-  };
+  }, [activeTabId, fileName]);
 
   // Helper to add or update recent files (Max 10)
-  const addRecentFile = (name: string, content: string, time = Date.now()) => {
+  const addRecentFile = useCallback((name: string, content: string, time = Date.now(), filePath?: string) => {
     localStorage.setItem('activeFileName', name);
     setRecentFiles((prev) => {
-      const filtered = prev.filter((f) => f.name !== name);
-      const updated = [{ name, content, timestamp: time }, ...filtered].slice(0, 10);
-      localStorage.setItem('recentFiles', JSON.stringify(updated));
-      return updated;
+      const existing = prev.find((f) => (filePath && f.filePath && f.filePath.toLowerCase() === filePath.toLowerCase()) || f.name === name);
+      const filtered = prev.filter((f) => !((filePath && f.filePath && f.filePath.toLowerCase() === filePath.toLowerCase()) || f.name === name));
+      const resolvedPath = filePath || existing?.filePath;
+      return [{ name, content, timestamp: time, filePath: resolvedPath }, ...filtered].slice(0, 10);
     });
-  };
+  }, []);
 
-  // Open or switch tab helper
-  const openOrSwitchTab = (name: string, content: string, modTime = Date.now()) => {
-    const existing = tabs.find((t) => t.name === name);
-    if (existing) {
-      setTabs((prev) =>
-        prev.map((t) => (t.id === existing.id ? { ...t, content, timestamp: modTime, isModified: false } : t))
-      );
-      setActiveTabId(existing.id);
-    } else {
-      if (tabs.length === 1 && (tabs[0].name === 'markdown-app.md' || tabs[0].name.startsWith('새문서')) && !tabs[0].isModified) {
-        const replacedTab: TabDocument = {
-          id: tabs[0].id,
-          name,
-          content,
-          timestamp: modTime,
-          isModified: false,
-        };
-        setTabs([replacedTab]);
-        setActiveTabId(replacedTab.id);
-      } else {
-        const newTab: TabDocument = {
-          id: 'tab-' + Date.now(),
-          name,
-          content,
-          timestamp: modTime,
-          isModified: false,
-        };
-        setTabs((prev) => [...prev, newTab]);
-        setActiveTabId(newTab.id);
+  // Open or switch tab helper (Atomic & Deduplicating across concurrent events)
+  const openOrSwitchTab = useCallback((name: string, content: string, modTime = Date.now(), fileHandle?: any, filePath?: string) => {
+    setTabs((prev) => {
+      const existing = prev.find((t) => (filePath && t.filePath && t.filePath.toLowerCase() === filePath.toLowerCase()) || t.name === name);
+      const resolvedPath = filePath || (existing ? existing.filePath : undefined);
+
+      if (existing) {
+        setActiveTabId(existing.id);
+        return prev.map((t) =>
+          t.id === existing.id
+            ? { ...t, content, timestamp: modTime, isModified: false, fileHandle: fileHandle || t.fileHandle, filePath: resolvedPath }
+            : t
+        );
       }
-    }
-    addRecentFile(name, content, modTime);
-  };
+
+      if (prev.length === 1 && (prev[0].name === 'markdown-app.md' || prev[0].name.startsWith('새문서')) && !prev[0].isModified) {
+        const replacedTab: TabDocument = {
+          id: prev[0].id,
+          name,
+          content,
+          timestamp: modTime,
+          isModified: false,
+          fileHandle,
+          filePath: resolvedPath,
+        };
+        setActiveTabId(replacedTab.id);
+        return [replacedTab];
+      }
+
+      const newTab: TabDocument = {
+        id: 'tab-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
+        name,
+        content,
+        timestamp: modTime,
+        isModified: false,
+        fileHandle,
+        filePath: resolvedPath,
+      };
+      setActiveTabId(newTab.id);
+      return [...prev, newTab];
+    });
+
+    addRecentFile(name, content, modTime, filePath);
+  }, [addRecentFile]);
+
+  // Handle CLI file opening (Windows Explorer association launch & Single Instance)
+  useEffect(() => {
+    let isMounted = true;
+    let unlistenFn: (() => void) | null = null;
+    let lastHandledPath = '';
+    let lastHandledTime = 0;
+
+    const handleFileOpen = (res: any) => {
+      if (!res || !res.path) return;
+      const now = Date.now();
+      // Debounce identical file events within 800ms
+      if (lastHandledPath.toLowerCase() === res.path.toLowerCase() && now - lastHandledTime < 800) {
+        return;
+      }
+      lastHandledPath = res.path;
+      lastHandledTime = now;
+
+      openOrSwitchTab(res.name, res.content, res.modified || Date.now(), undefined, res.path);
+      showToast(`📂 "${res.name}" 문서를 열었습니다.`);
+    };
+
+    const checkInitialCliFile = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const res = await invoke<any>('get_cli_file');
+          if (isMounted && res && res.path) {
+            handleFileOpen(res);
+          }
+        }
+      } catch (err) {
+        console.warn('get_cli_file error:', err);
+      }
+    };
+
+    checkInitialCliFile();
+
+    const setupCliListener = async () => {
+      try {
+        if (typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__) {
+          const { listen } = await import('@tauri-apps/api/event');
+          const unlisten = await listen<any>('open-file-from-cli', (event) => {
+            if (isMounted && event.payload) {
+              handleFileOpen(event.payload);
+            }
+          });
+          if (isMounted) {
+            unlistenFn = unlisten;
+          } else {
+            unlisten();
+          }
+        }
+      } catch (err) {
+        console.warn('listen open-file-from-cli error:', err);
+      }
+    };
+
+    setupCliListener();
+
+    return () => {
+      isMounted = false;
+      if (unlistenFn) {
+        unlistenFn();
+      }
+    };
+  }, [openOrSwitchTab]);
 
   // Tab Action Handlers
   const handleSelectTab = (tabId: string) => {
@@ -337,7 +576,7 @@ export function App() {
 
       if (fileName === nameToRemove) {
         if (updated.length > 0) {
-          openOrSwitchTab(updated[0].name, updated[0].content, updated[0].timestamp || Date.now());
+          openOrSwitchTab(updated[0].name, updated[0].content, updated[0].timestamp || Date.now(), undefined, updated[0].filePath);
         } else {
           openOrSwitchTab('markdown-app.md', DEFAULT_SAMPLE_MD, Date.now());
         }
@@ -348,11 +587,11 @@ export function App() {
 
   // Select a recent file
   const handleSelectRecentFile = (file: RecentFile) => {
-    openOrSwitchTab(file.name, file.content, file.timestamp || Date.now());
+    openOrSwitchTab(file.name, file.content, file.timestamp || Date.now(), undefined, file.filePath);
   };
 
   // Content-aware Heading Alignment Scroll Sync
-  const handleSourceScroll = () => {
+  const handleSourceScroll = useCallback(() => {
     if (viewMode !== 'split' || !sourceRef.current || !mainContentRef.current) return;
     if (isSyncingScroll.current) return;
 
@@ -390,9 +629,9 @@ export function App() {
     requestAnimationFrame(() => {
       isSyncingScroll.current = false;
     });
-  };
+  }, [viewMode, headings]);
 
-  const handleViewScroll = () => {
+  const handleViewScroll = useCallback(() => {
     if (viewMode !== 'split' || !sourceRef.current || !mainContentRef.current) return;
     if (isSyncingScroll.current) return;
 
@@ -430,7 +669,7 @@ export function App() {
     requestAnimationFrame(() => {
       isSyncingScroll.current = false;
     });
-  };
+  }, [viewMode, headings]);
 
   // Save states
   useEffect(() => {
@@ -441,20 +680,278 @@ export function App() {
     localStorage.setItem('viewMode', viewMode);
   }, [viewMode]);
 
-  // Open file handler
-  const handleOpenFileClick = () => {
+  // Open file handler (Tauri native file picker with full path preservation)
+  const handleOpenFileClick = async () => {
+    // 1. Tauri native file dialog (returns exact absolute path and content)
+    try {
+      const res = await invoke<any>('open_file_dialog');
+      if (res && res.path) {
+        openOrSwitchTab(res.name, res.content, res.modified || Date.now(), undefined, res.path);
+        addRecentFile(res.name, res.content, res.modified || Date.now(), res.path);
+        showToast(`📂 "${res.name}" 문서를 열었습니다.`);
+        return;
+      } else if (res === null) {
+        return; // User cancelled
+      }
+    } catch (err) {
+      console.warn('Tauri open_file_dialog error, falling back:', err);
+    }
+
+    // 2. Web File System Access API
+    if ('showOpenFilePicker' in window) {
+      try {
+        const [handle] = await (window as any).showOpenFilePicker({
+          types: [
+            {
+              description: 'Markdown File',
+              accept: {
+                'text/markdown': ['.md', '.markdown', '.txt', '.text'],
+              },
+            },
+          ],
+          multiple: false,
+        });
+        if (handle) {
+          const file = await handle.getFile();
+          const text = await file.text();
+          const modTime = file.lastModified || Date.now();
+          const filePath = (file as any)?.path;
+          openOrSwitchTab(file.name, text, modTime, handle, filePath);
+          addRecentFile(file.name, text, modTime, filePath);
+          showToast(`📂 "${file.name}" 문서를 열었습니다.`);
+          return;
+        }
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+        console.warn('showOpenFilePicker error, falling back:', err);
+      }
+    }
     fileInputRef.current?.click();
   };
+
+  // Reload Current File Handler (Direct disk reload without re-opening file dialog)
+  const handleReloadFile = async () => {
+    if (!activeTab) return;
+
+    // 1. If filePath is available, read directly from disk via Tauri invoke
+    const targetFilePath = activeTab.filePath || recentFiles.find((f) => f.name === activeTab.name)?.filePath;
+    if (targetFilePath) {
+      try {
+        const text = await invoke<string>('read_file_content', { path: targetFilePath });
+        let modTime = Date.now();
+        try {
+          modTime = await invoke<number>('get_file_metadata', { path: targetFilePath });
+        } catch {
+          modTime = Date.now();
+        }
+
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTabId
+              ? { ...t, content: text, timestamp: modTime, isModified: false, hasExternalChange: false, filePath: targetFilePath }
+              : t
+          )
+        );
+        addRecentFile(activeTab.name, text, modTime, targetFilePath);
+        showToast(`🔄 "${activeTab.name}" 파일을 디스크에서 다시 로드했습니다.`);
+        return;
+      } catch (err: any) {
+        console.warn('Failed to reload via Tauri invoke:', err);
+        showToast(`❌ 파일을 디스크에서 다시 읽을 수 없습니다: ${err}`);
+        return;
+      }
+    }
+
+    // 2. If fileHandle is available (Web File System Access API)
+    if (activeTab.fileHandle) {
+      try {
+        const file = await activeTab.fileHandle.getFile();
+        const text = await file.text();
+        const modTime = file.lastModified || Date.now();
+        const filePath = (file as any)?.path;
+
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTabId
+              ? { ...t, content: text, timestamp: modTime, isModified: false, hasExternalChange: false, filePath: filePath || t.filePath }
+              : t
+          )
+        );
+        addRecentFile(activeTab.name, text, modTime, filePath || activeTab.filePath);
+        showToast(`🔄 "${activeTab.name}" 파일을 디스크에서 다시 로드했습니다.`);
+        return;
+      } catch (err: any) {
+        console.warn('Failed to reload using fileHandle:', err);
+      }
+    }
+
+    // 3. Fallback: If recent file content exists in memory / storage and was modified
+    const recent = recentFiles.find((f) => f.name === fileName);
+    if (recent && recent.content !== undefined && activeTab.isModified) {
+      const confirmReload = window.confirm(
+        `"${fileName}" 파일의 수정 사항을 취소하고 최근 저장된 상태로 다시 로드하시겠습니까?`
+      );
+      if (confirmReload) {
+        setTabs((prev) =>
+          prev.map((t) =>
+            t.id === activeTabId
+              ? { ...t, content: recent.content, timestamp: recent.timestamp || Date.now(), isModified: false, hasExternalChange: false }
+              : t
+          )
+        );
+        showToast(`🔄 "${fileName}" 문서를 최근 상태로 다시 로드했습니다.`);
+        return;
+      }
+      return;
+    }
+
+    // 4. If neither path nor handle exists, show notice
+    showToast(`⚠️ "${activeTab.name}" 파일에 연결된 디스크 경로가 없습니다.`);
+  };
+
+  // Handlers for External File Change Banner
+  const handleReloadExternalChange = () => {
+    if (!externalChange || !activeTab) return;
+    const { diskContent, mtime, fileName: changeFileName } = externalChange;
+
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === activeTabId
+          ? { ...t, content: diskContent, timestamp: mtime, isModified: false, hasExternalChange: false }
+          : t
+      )
+    );
+    addRecentFile(changeFileName, diskContent, mtime, activeTab.filePath);
+    setExternalChange(null);
+    showToast(`🔄 "${changeFileName}" 파일을 최신 디스크 내용으로 다시 불러왔습니다.`);
+  };
+
+  const handleKeepExternalChange = (silent?: boolean) => {
+    if (!externalChange || !activeTab) return;
+    dismissedExternalChanges.current[activeTab.id] = externalChange.mtime;
+    setExternalChange(null);
+    if (!silent) {
+      showToast(`🛡️ "${activeTab.name}" 현재 편집 내용을 유지합니다.`);
+    }
+  };
+
+  const handleDismissExternalChange = () => {
+    if (!externalChange || !activeTab) return;
+    dismissedExternalChanges.current[activeTab.id] = externalChange.mtime;
+    setExternalChange(null);
+  };
+
+  // Watch for external file modifications (Obsidian, VS Code, etc.)
+  useEffect(() => {
+    let isChecking = false;
+
+    const checkActiveTabExternalChange = async () => {
+      if (isChecking || !activeTab) return;
+      isChecking = true;
+
+      try {
+        const targetFilePath = activeTab.filePath || recentFiles.find((f) => f.name === activeTab.name)?.filePath;
+
+        // 1. Tauri File Watch via invoke
+        if (targetFilePath) {
+          try {
+            const modTime = await invoke<number>('get_file_metadata', { path: targetFilePath });
+            if (modTime && modTime > (activeTab.timestamp || 0)) {
+              if (dismissedExternalChanges.current[activeTab.id] === modTime) {
+                return;
+              }
+
+              const diskContent = await invoke<string>('read_file_content', { path: targetFilePath });
+              if (diskContent === activeTab.content) {
+                // Silently align timestamp if content is identical
+                setTabs((prev) =>
+                  prev.map((t) => (t.id === activeTabId ? { ...t, timestamp: modTime, hasExternalChange: false } : t))
+                );
+              } else {
+                setExternalChange({
+                  tabId: activeTab.id,
+                  fileName: activeTab.name,
+                  mtime: modTime,
+                  diskContent,
+                });
+                setTabs((prev) =>
+                  prev.map((t) => (t.id === activeTabId ? { ...t, hasExternalChange: true } : t))
+                );
+              }
+            }
+          } catch {
+            // Ignore missing file / fs access errors
+          }
+          return;
+        }
+
+        // 2. Web File System Access API Watch
+        if (activeTab.fileHandle) {
+          try {
+            const file = await activeTab.fileHandle.getFile();
+            const modTime = file.lastModified || Date.now();
+            if (modTime > (activeTab.timestamp || 0)) {
+              if (dismissedExternalChanges.current[activeTab.id] === modTime) {
+                return;
+              }
+
+              const diskContent = await file.text();
+              if (diskContent === activeTab.content) {
+                setTabs((prev) =>
+                  prev.map((t) => (t.id === activeTabId ? { ...t, timestamp: modTime, hasExternalChange: false } : t))
+                );
+              } else {
+                setExternalChange({
+                  tabId: activeTab.id,
+                  fileName: activeTab.name,
+                  mtime: modTime,
+                  diskContent,
+                });
+                setTabs((prev) =>
+                  prev.map((t) => (t.id === activeTabId ? { ...t, hasExternalChange: true } : t))
+                );
+              }
+            }
+          } catch {
+            // Ignore handle errors
+          }
+        }
+      } finally {
+        isChecking = false;
+      }
+    };
+
+    const handleWindowFocus = () => {
+      checkActiveTabExternalChange();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkActiveTabExternalChange();
+      }
+    };
+
+    window.addEventListener('focus', handleWindowFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    const intervalId = window.setInterval(checkActiveTabExternalChange, 2500);
+
+    return () => {
+      window.removeEventListener('focus', handleWindowFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.clearInterval(intervalId);
+    };
+  }, [activeTab, activeTabId, recentFiles]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const modTime = file.lastModified || Date.now();
+      const filePath = (file as any)?.path || (file as any)?.webkitRelativePath;
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target?.result as string;
         if (text !== undefined) {
-          openOrSwitchTab(file.name, text, modTime);
+          openOrSwitchTab(file.name, text, modTime, undefined, filePath);
           showToast(`📂 "${file.name}" 문서를 열었습니다.`);
         }
       };
@@ -472,11 +969,12 @@ export function App() {
     const file = e.dataTransfer.files?.[0];
     if (file && (file.name.endsWith('.md') || file.name.endsWith('.txt') || file.type.startsWith('text/'))) {
       const modTime = file.lastModified || Date.now();
+      const filePath = (file as any)?.path;
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target?.result as string;
         if (text !== undefined) {
-          openOrSwitchTab(file.name, text, modTime);
+          openOrSwitchTab(file.name, text, modTime, undefined, filePath);
           showToast(`📂 "${file.name}" 문서를 열었습니다.`);
         }
       };
@@ -487,29 +985,269 @@ export function App() {
   // Scroll to heading
   const scrollToHeading = (id: string) => {
     setActiveHeadingId(id);
-    const viewElement = document.getElementById(id);
+    let viewElement = document.getElementById(id);
+    if (!viewElement && id) {
+      try {
+        viewElement = document.querySelector(`[id="${CSS.escape(id)}"]`) as HTMLElement;
+      } catch (e) {}
+    }
     const sourceElement = document.getElementById(`source-heading-${id}`);
 
     if (viewElement && (viewMode === 'view' || viewMode === 'split' || viewMode === 'edit' || viewMode === 'inline')) {
       if (mainContentRef.current) {
-        mainContentRef.current.scrollTop = viewElement.offsetTop - 20;
+        const container = mainContentRef.current;
+        const targetRect = viewElement.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        container.scrollTop += (targetRect.top - containerRect.top) - 20;
       } else {
         viewElement.scrollIntoView({ behavior: 'auto', block: 'start' });
       }
+
+      // Add target heading pulse/flash highlight animation
+      document.querySelectorAll('.heading-target-flash').forEach((el) => {
+        el.classList.remove('heading-target-flash');
+      });
+      viewElement.classList.remove('heading-target-flash');
+      void viewElement.offsetWidth; // force reflow to restart animation reliably
+      viewElement.classList.add('heading-target-flash');
+      window.setTimeout(() => {
+        viewElement?.classList.remove('heading-target-flash');
+      }, 1700);
     }
+
     if (sourceElement && (viewMode === 'source' || viewMode === 'split')) {
       if (sourceRef.current) {
-        sourceRef.current.scrollTop = sourceElement.offsetTop - 20;
+        const container = sourceRef.current;
+        const targetRect = sourceElement.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        container.scrollTop += (targetRect.top - containerRect.top) - 20;
       } else {
         sourceElement.scrollIntoView({ behavior: 'auto', block: 'start' });
+      }
+
+      document.querySelectorAll('.source-heading-flash').forEach((el) => {
+        el.classList.remove('source-heading-flash');
+      });
+      sourceElement.classList.remove('source-heading-flash');
+      void sourceElement.offsetWidth;
+      sourceElement.classList.add('source-heading-flash');
+      window.setTimeout(() => {
+        sourceElement?.classList.remove('source-heading-flash');
+      }, 1700);
+    }
+  };
+
+  // Scroll to specific line index or element
+  const scrollToLine = (targetLineIndex: number) => {
+    // 1. In View / Split / Edit / Inline mode: find element with data-line-index
+    if (viewMode === 'view' || viewMode === 'split' || viewMode === 'edit' || viewMode === 'inline') {
+      let targetEl: HTMLElement | null = null;
+      // Search for exact line or nearest preceding line
+      for (let offset = 0; offset <= 8; offset++) {
+        const tryLine = targetLineIndex - offset;
+        if (tryLine < 0) break;
+        const el = document.querySelector(`[data-line-index="${tryLine}"]`) as HTMLElement;
+        if (el) {
+          targetEl = el;
+          break;
+        }
+      }
+
+      if (targetEl && mainContentRef.current) {
+        const container = mainContentRef.current;
+        const targetRect = targetEl.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        container.scrollTop += (targetRect.top - containerRect.top) - 40;
+
+        // Flash highlight animation on target line element
+        targetEl.classList.remove('heading-target-flash');
+        void targetEl.offsetWidth;
+        targetEl.classList.add('heading-target-flash');
+        window.setTimeout(() => {
+          targetEl?.classList.remove('heading-target-flash');
+        }, 1700);
+      }
+    }
+
+    // 2. In Source / Split mode: find line in source gutter or scroll textarea
+    if (viewMode === 'source' || viewMode === 'split') {
+      const lineGutterEl = document.getElementById(`source-line-${targetLineIndex + 1}`);
+      if (lineGutterEl && sourceRef.current) {
+        const container = sourceRef.current;
+        const lineRect = lineGutterEl.getBoundingClientRect();
+        const containerRect = container.getBoundingClientRect();
+        container.scrollTop += (lineRect.top - containerRect.top) - 40;
+      } else if (sourceRef.current) {
+        const lineHeight = 24; // 1.5rem = 24px in MarkdownSource
+        sourceRef.current.scrollTop = Math.max(0, targetLineIndex * lineHeight - 40);
       }
     }
   };
 
-  // Save File Handler (With File System Picker / Confirmation)
+  // Scroll to bookmark
+  const scrollToBookmark = (bm: BookmarkItem) => {
+    scrollToLine(bm.lineIndex);
+    showToast(`🔖 "${bm.title}" (L${bm.lineIndex + 1}) 위치로 이동했습니다.`);
+  };
+
+  // Add bookmark handler
+  const handleAddBookmark = (lineIndex: number, title?: string, snippet?: string) => {
+    const lines = markdown.split('\n');
+    const rawLine = lines[lineIndex] || '';
+    // Clean markdown headings, bold/italic, code, links, quotes, table pipes
+    const cleanRaw = rawLine
+      .replace(/^[#\s\-\*\+>\|]+/, '')
+      .replace(/[\|]+$/, '')
+      .replace(/\*\*|\*|~~|`|<mark>|<\/mark>/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/\|/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const cleanTitle = (title || cleanRaw || `라인 ${lineIndex + 1}`)
+      .replace(/^[#\s\-\*\+>\|]+/, '')
+      .replace(/[\|]+$/, '')
+      .replace(/\*\*|\*|~~|`|<mark>|<\/mark>/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/\|/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const finalTitle = cleanTitle || `라인 ${lineIndex + 1}`;
+    const cleanSnippet = cleanRaw || rawLine;
+    const finalSnippet = snippet || (cleanSnippet.length > 60 ? cleanSnippet.slice(0, 60) + '...' : cleanSnippet);
+
+    const newBookmark: BookmarkItem = {
+      id: 'bm-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
+      title: finalTitle,
+      lineIndex,
+      snippet: finalSnippet,
+      createdAt: Date.now(),
+    };
+
+    setDocBookmarksMap((prev) => {
+      const existing = prev[currentDocKey] || (activeTab?.name ? prev[activeTab.name] : undefined) || [];
+      // Prevent exact duplicate line bookmark
+      const filtered = existing.filter((b) => b.lineIndex !== lineIndex);
+      const updated = [...filtered, newBookmark].sort((a, b) => a.lineIndex - b.lineIndex);
+      const res: Record<string, BookmarkItem[]> = { ...prev, [currentDocKey]: updated };
+      if (activeTab?.name && activeTab.name !== currentDocKey) {
+        res[activeTab.name] = updated;
+      }
+      return res;
+    });
+
+    setTocOpen(true);
+    showToast(`🔖 "${finalTitle}" 책갈피가 추가되었습니다.`);
+    setContextMenu(null);
+  };
+
+  // Remove bookmark handler
+  const handleRemoveBookmark = (id: string) => {
+    setDocBookmarksMap((prev) => {
+      const existing = prev[currentDocKey] || (activeTab?.name ? prev[activeTab.name] : undefined) || [];
+      const target = existing.find((b) => b.id === id);
+      const updated = existing.filter((b) => b.id !== id);
+      if (target) {
+        showToast(`🗑️ "${target.title}" 책갈피가 삭제되었습니다.`);
+      }
+      const res: Record<string, BookmarkItem[]> = { ...prev, [currentDocKey]: updated };
+      if (activeTab?.name && activeTab.name !== currentDocKey) {
+        res[activeTab.name] = updated;
+      }
+      return res;
+    });
+  };
+
+  // Clear all bookmarks for active document
+  const handleClearBookmarks = () => {
+    setDocBookmarksMap((prev) => {
+      const res: Record<string, BookmarkItem[]> = { ...prev, [currentDocKey]: [] };
+      if (activeTab?.name && activeTab.name !== currentDocKey) {
+        res[activeTab.name] = [];
+      }
+      return res;
+    });
+    showToast('🗑️ 현재 문서의 모든 책갈피가 초기화되었습니다.');
+  };
+
+  // Helper to copy bookmarks from current document to a newly saved file's path and name
+  const copyDocBookmarks = useCallback((newPath?: string, newName?: string) => {
+    setDocBookmarksMap((prev) => {
+      const sourceBookmarks = prev[currentDocKey] || (activeTab?.name ? prev[activeTab.name] : undefined) || [];
+      if (!sourceBookmarks || sourceBookmarks.length === 0) return prev;
+      const updated = { ...prev };
+      if (newPath) updated[newPath] = [...sourceBookmarks];
+      if (newName) updated[newName] = [...sourceBookmarks];
+      return updated;
+    });
+  }, [currentDocKey, activeTab?.name]);
+
+  // Save File Handler (With Direct File System Overwrite / Native Dialog)
   const handleSaveFile = async () => {
+    if (!activeTab) return;
+
+    // 1. Direct overwrite if filePath is available
+    if (activeTab.filePath) {
+      try {
+        const now = await invoke<number>('write_file_content', { path: activeTab.filePath, content: markdown });
+        dismissedExternalChanges.current[activeTab.id] = now;
+        setExternalChange(null);
+        setTabs((prev) =>
+          prev.map((t) => (t.id === activeTabId ? { ...t, timestamp: now, isModified: false, hasExternalChange: false } : t))
+        );
+        addRecentFile(activeTab.name, markdown, now, activeTab.filePath);
+        showToast(`💾 "${activeTab.name}" 저장 완료`);
+        return;
+      } catch (err) {
+        console.warn('write_file_content error, trying save dialog:', err);
+      }
+    }
+
+    // 2. Direct overwrite if fileHandle is available
+    if (activeTab.fileHandle) {
+      try {
+        const writable = await activeTab.fileHandle.createWritable();
+        await writable.write(markdown);
+        await writable.close();
+        const now = Date.now();
+        dismissedExternalChanges.current[activeTab.id] = now;
+        setExternalChange(null);
+        setTabs((prev) =>
+          prev.map((t) => (t.id === activeTabId ? { ...t, timestamp: now, isModified: false, hasExternalChange: false } : t))
+        );
+        addRecentFile(activeTab.name, markdown, now, activeTab.filePath);
+        showToast(`💾 "${activeTab.name}" 저장 완료`);
+        return;
+      } catch (err: any) {
+        console.warn('fileHandle write error, falling back:', err);
+      }
+    }
+
+    // 3. Prompt Save As dialog via Tauri
     try {
-      if ('showSaveFilePicker' in window) {
+      const res = await invoke<any>('save_file_as_dialog', { defaultName: fileName || 'document.md', content: markdown });
+      if (res && res.path) {
+        const now = res.modified || Date.now();
+        copyDocBookmarks(res.path, res.name);
+        dismissedExternalChanges.current[activeTab.id] = now;
+        setExternalChange(null);
+        setTabs((prev) =>
+          prev.map((t) => (t.id === activeTabId ? { ...t, name: res.name, timestamp: now, isModified: false, hasExternalChange: false, filePath: res.path } : t))
+        );
+        addRecentFile(res.name, markdown, now, res.path);
+        showToast(`💾 "${res.name}" 저장 완료`);
+        return;
+      } else if (res === null) {
+        return;
+      }
+    } catch (err) {
+      console.warn('save_file_as_dialog error, falling back to Web API:', err);
+    }
+
+    // 4. Web File System Access API
+    if ('showSaveFilePicker' in window) {
+      try {
         const handle = await (window as any).showSaveFilePicker({
           suggestedName: fileName || 'document.md',
           types: [
@@ -523,23 +1261,27 @@ export function App() {
         await writable.write(markdown);
         await writable.close();
         const now = Date.now();
+        copyDocBookmarks(undefined, handle.name);
+        dismissedExternalChanges.current[activeTab.id] = now;
+        setExternalChange(null);
         setTabs((prev) =>
-          prev.map((t) => (t.id === activeTabId ? { ...t, name: handle.name, timestamp: now, isModified: false } : t))
+          prev.map((t) => (t.id === activeTabId ? { ...t, name: handle.name, timestamp: now, isModified: false, hasExternalChange: false, fileHandle: handle } : t))
         );
         addRecentFile(handle.name, markdown, now);
         showToast(`💾 "${handle.name}" 저장 완료`);
         return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError') return;
     }
 
     const targetName = prompt('저장할 파일 이름을 확인하세요:', fileName || 'document.md');
     if (!targetName) return;
 
+    copyDocBookmarks(undefined, targetName);
     const now = Date.now();
     setTabs((prev) =>
-      prev.map((t) => (t.id === activeTabId ? { ...t, name: targetName, timestamp: now, isModified: false } : t))
+      prev.map((t) => (t.id === activeTabId ? { ...t, name: targetName, timestamp: now, isModified: false, hasExternalChange: false } : t))
     );
     addRecentFile(targetName, markdown, now);
 
@@ -555,7 +1297,7 @@ export function App() {
     showToast(`💾 "${targetName}" 다운로드 저장 완료`);
   };
 
-  // Save As Handler (Auto Versioning + File System Picker / Confirmation)
+  // Save As Handler (Auto Versioning + File System Picker / Native Dialog)
   const handleSaveAsFile = async () => {
     const currentName = fileName || 'document.md';
     const extIndex = currentName.lastIndexOf('.');
@@ -574,8 +1316,30 @@ export function App() {
       suggestedName = `${baseName}_v1.0${ext}`;
     }
 
+    // 1. Tauri native save_file_as_dialog
     try {
-      if ('showSaveFilePicker' in window) {
+      const res = await invoke<any>('save_file_as_dialog', { defaultName: suggestedName, content: markdown });
+      if (res && res.path) {
+        const now = res.modified || Date.now();
+        copyDocBookmarks(res.path, res.name);
+        dismissedExternalChanges.current[activeTab.id] = now;
+        setExternalChange(null);
+        setTabs((prev) =>
+          prev.map((t) => (t.id === activeTabId ? { ...t, name: res.name, timestamp: now, isModified: false, hasExternalChange: false, filePath: res.path } : t))
+        );
+        addRecentFile(res.name, markdown, now, res.path);
+        showToast(`💾 "${res.name}" 다른 이름으로 저장 완료`);
+        return;
+      } else if (res === null) {
+        return;
+      }
+    } catch (err) {
+      console.warn('save_file_as_dialog error, falling back to Web API:', err);
+    }
+
+    // 2. Web File System Access API
+    if ('showSaveFilePicker' in window) {
+      try {
         const handle = await (window as any).showSaveFilePicker({
           suggestedName: suggestedName,
           types: [
@@ -589,20 +1353,24 @@ export function App() {
         await writable.write(markdown);
         await writable.close();
         const now = Date.now();
+        copyDocBookmarks(undefined, handle.name);
+        dismissedExternalChanges.current[activeTab.id] = now;
+        setExternalChange(null);
         setTabs((prev) =>
-          prev.map((t) => (t.id === activeTabId ? { ...t, name: handle.name, timestamp: now, isModified: false } : t))
+          prev.map((t) => (t.id === activeTabId ? { ...t, name: handle.name, timestamp: now, isModified: false, hasExternalChange: false, fileHandle: handle } : t))
         );
         addRecentFile(handle.name, markdown, now);
         showToast(`💾 "${handle.name}" 다른 이름으로 저장 완료`);
         return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
       }
-    } catch (err: any) {
-      if (err.name === 'AbortError') return;
     }
 
     const targetName = prompt('다른 이름으로 저장할 폴더/파일명을 확인하세요:', suggestedName);
     if (!targetName) return;
 
+    copyDocBookmarks(undefined, targetName);
     const now = Date.now();
     setTabs((prev) =>
       prev.map((t) => (t.id === activeTabId ? { ...t, name: targetName, timestamp: now, isModified: false } : t))
@@ -736,6 +1504,9 @@ export function App() {
         } else if (e.key.toLowerCase() === 'o') {
           e.preventDefault();
           handleOpenFileClick();
+        } else if (e.key.toLowerCase() === 'r') {
+          e.preventDefault();
+          handleReloadFile();
         } else if (e.key.toLowerCase() === 'p') {
           e.preventDefault();
           handlePrint();
@@ -765,18 +1536,53 @@ export function App() {
           e.preventDefault();
           setZoomLevel(1.0);
         }
+      } else if (e.key === 'F5') {
+        e.preventDefault();
+        handleReloadFile();
       } else if (e.key === 'Escape') {
         if (searchOpen) {
           setSearchOpen(false);
         }
         setIsHighlightMode(false);
         setIsTaskMode(false);
+      } else if (e.key === 'Enter') {
+        const activeEl = document.activeElement;
+        const isEditing =
+          activeEl &&
+          (activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            (activeEl as HTMLElement).isContentEditable);
+
+        if (!isEditing && viewMode === 'view' && headings.length > 0) {
+          e.preventDefault();
+          const currentIdx = headings.findIndex((h) => h.id === activeHeadingId);
+          let targetIdx: number;
+          if (e.shiftKey) {
+            // Shift + Enter: Previous TOC Heading
+            if (currentIdx <= 0) {
+              targetIdx = headings.length - 1;
+            } else {
+              targetIdx = currentIdx - 1;
+            }
+          } else {
+            // Enter: Next TOC Heading
+            if (currentIdx === -1 || currentIdx >= headings.length - 1) {
+              targetIdx = 0;
+            } else {
+              targetIdx = currentIdx + 1;
+            }
+          }
+          const targetHeading = headings[targetIdx];
+          if (targetHeading) {
+            scrollToHeading(targetHeading.id);
+          }
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [searchOpen, isHighlightMode, isTaskMode, markdown, fileName, tabs, activeTabId]);
+  }, [searchOpen, isHighlightMode, isTaskMode, markdown, fileName, tabs, activeTabId, viewMode, headings, activeHeadingId]);
 
   // Helper function to escape regex special chars
   const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1105,7 +1911,7 @@ export function App() {
   }, [isHighlightMode, markdown]);
 
   // Handle Interactive Task List Item Checkbox Click (View Mode)
-  const handleToggleTaskListItem = (sourceLineIndex: number, targetCheckedState: boolean, textContext?: string) => {
+  const handleToggleTaskListItem = useCallback((sourceLineIndex: number, targetCheckedState: boolean, textContext?: string) => {
     const lines = markdown.split('\n');
     const newCheck = targetCheckedState ? 'x' : ' ';
     let replaced = false;
@@ -1142,7 +1948,20 @@ export function App() {
     if (replaced) {
       updateMarkdown(lines.join('\n'));
     }
-  };
+  }, [markdown, updateMarkdown]);
+
+  // Handle embedding image data URL directly into markdown text
+  const handleEmbedImageInMarkdown = useCallback((rawSrc: string, dataUrl: string, sourcePath?: string) => {
+    if (!activeTab) return;
+    const oldContent = activeTab.content;
+    const newContent = embedImageDataUrlInMarkdown(oldContent, rawSrc, dataUrl);
+    if (newContent !== oldContent) {
+      updateMarkdown(newContent);
+      const filename = decodeURIComponent(rawSrc.split(/[/\\]/).pop() || rawSrc);
+      const originInfo = sourcePath ? `\n📁 가져온 경로: ${sourcePath}` : '';
+      showToast(`✨ "${filename}" 이미지가 본문에 Base64로 영구 임베딩되었습니다.${originInfo}`);
+    }
+  }, [activeTab, updateMarkdown]);
 
   // Floating Menu Actions
   const handleScrollToTop = () => {
@@ -1176,6 +1995,7 @@ export function App() {
           fileName={fileName}
           lastModifiedTime={lastModifiedTime}
           onOpenFile={handleOpenFileClick}
+          onReloadFile={handleReloadFile}
           onSaveFile={handleSaveFile}
           onSaveAsFile={handleSaveAsFile}
           onPrint={handlePrint}
@@ -1204,6 +2024,18 @@ export function App() {
           onNewTab={handleNewTab}
         />
 
+        {/* External File Change Alert Banner */}
+        {externalChange && externalChange.tabId === activeTabId && (
+          <ExternalChangeBanner
+            fileName={externalChange.fileName}
+            isModified={activeTab?.isModified}
+            theme={theme}
+            onReload={handleReloadExternalChange}
+            onKeep={handleKeepExternalChange}
+            onDismiss={handleDismissExternalChange}
+          />
+        )}
+
         {searchOpen && (
           <SearchBar
             searchQuery={searchQuery}
@@ -1213,22 +2045,121 @@ export function App() {
         )}
 
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {/* Left Table of Contents Panel */}
+          {/* Left Table of Contents Panel & Draggable Width Resizer */}
           {tocOpen && (
-            <TableOfContents
-              headings={headings}
-              activeId={activeHeadingId}
-              onSelectHeading={scrollToHeading}
-            />
+            <>
+              <TableOfContents
+                headings={headings}
+                activeId={activeHeadingId}
+                width={tocWidth}
+                onClose={() => setTocOpen(false)}
+                onSelectHeading={scrollToHeading}
+                bookmarks={currentBookmarks}
+                onSelectBookmark={scrollToBookmark}
+                onRemoveBookmark={handleRemoveBookmark}
+                onClearBookmarks={handleClearBookmarks}
+              />
+              <div
+                className="w-1 bg-gray-200 dark:bg-gray-700/80 hover:bg-blue-500 active:bg-blue-600 cursor-col-resize select-none transition-colors shrink-0"
+                title="드래그하여 목차 너비 조절 / 더블클릭 시 기본 너비(280px) 초기화"
+                onDoubleClick={() => setTocWidth(280)}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  const startX = e.clientX;
+                  const startWidth = tocWidth;
+                  const onMouseMove = (moveEvent: MouseEvent) => {
+                    const deltaX = moveEvent.clientX - startX;
+                    const newWidth = Math.min(Math.max(startWidth + deltaX, 160), 650);
+                    setTocWidth(newWidth);
+                  };
+                  const onMouseUp = () => {
+                    window.removeEventListener('mousemove', onMouseMove);
+                    window.removeEventListener('mouseup', onMouseUp);
+                  };
+                  window.addEventListener('mousemove', onMouseMove);
+                  window.addEventListener('mouseup', onMouseUp);
+                }}
+              />
+            </>
           )}
 
-          {/* Main Content Area (Source / Edit / View / Source + View) */}
-          <main className="flex-1 flex overflow-hidden relative">
+          {/* Main Content Area with Right-Click Context Menu for Bookmarks */}
+          <main
+            onContextMenu={(e) => {
+              // Extract target element and line index
+              const target = e.target as HTMLElement;
+              let lineEl: HTMLElement | null = target.closest('[data-line-index]');
+              let lineIdx = 0;
+              if (lineEl && lineEl.hasAttribute('data-line-index')) {
+                const parsed = parseInt(lineEl.getAttribute('data-line-index') || '0', 10);
+                if (!isNaN(parsed) && parsed >= 0) {
+                  lineIdx = parsed;
+                }
+              } else {
+                // If clicked on textarea in Source mode
+                if (target.tagName === 'TEXTAREA') {
+                  const textarea = target as HTMLTextAreaElement;
+                  const cursor = textarea.selectionStart;
+                  const textBefore = textarea.value.substring(0, cursor);
+                  lineIdx = textBefore.split('\n').length - 1;
+                } else if (mainContentRef.current) {
+                  // Fallback: estimate line based on scroll percentage
+                  const container = mainContentRef.current;
+                  const ratio = container.scrollTop / (container.scrollHeight - container.clientHeight || 1);
+                  const total = markdown.split('\n').length;
+                  lineIdx = Math.min(total - 1, Math.max(0, Math.floor(ratio * total)));
+                }
+              }
+
+              const selection = window.getSelection();
+              const selectedText = selection ? selection.toString().trim() : '';
+              const lines = markdown.split('\n');
+
+              // Dual-validation & Content-aware line calibration
+              const rawElText = (target.textContent || '').trim();
+              const cleanElFirstWord = rawElText.replace(/^[#\s\-\*\+>\|]+/, '').replace(/[\s\.\,\;\:\!\?].*$/, '').trim();
+              if (cleanElFirstWord && cleanElFirstWord.length >= 2) {
+                const currentLineStr = lines[lineIdx] || '';
+                if (!currentLineStr.includes(cleanElFirstWord)) {
+                  // Check nearby lines (-10 to +10)
+                  let foundNear = -1;
+                  for (let offset = 1; offset <= 10; offset++) {
+                    if (lineIdx - offset >= 0 && (lines[lineIdx - offset] || '').includes(cleanElFirstWord)) {
+                      foundNear = lineIdx - offset;
+                      break;
+                    }
+                    if (lineIdx + offset < lines.length && (lines[lineIdx + offset] || '').includes(cleanElFirstWord)) {
+                      foundNear = lineIdx + offset;
+                      break;
+                    }
+                  }
+                  if (foundNear !== -1) {
+                    lineIdx = foundNear;
+                  }
+                }
+              }
+
+              const lineText = lines[lineIdx] || '';
+
+              e.preventDefault();
+              setContextMenu({
+                visible: true,
+                x: Math.min(e.clientX, window.innerWidth - 220),
+                y: Math.min(e.clientY, window.innerHeight - 200),
+                targetLineIndex: lineIdx,
+                selectedText,
+                lineText,
+              });
+            }}
+            className="flex-1 flex overflow-hidden relative"
+          >
             {viewMode === 'source' ? (
               <div className="w-full h-full overflow-hidden">
                 <MarkdownSource
                   ref={sourceRef}
                   markdown={markdown}
+                  onChange={updateMarkdown}
+                  bookmarks={currentBookmarks}
                 />
               </div>
             ) : viewMode === 'edit' ? (
@@ -1241,6 +2172,7 @@ export function App() {
                   <MarkdownEditor
                     markdown={markdown}
                     onChange={updateMarkdown}
+                    bookmarks={currentBookmarks}
                   />
                 </div>
 
@@ -1271,17 +2203,21 @@ export function App() {
                   }}
                 />
 
-                {/* Instant Live Rendered Preview Panel */}
+                {/* Instant Live Rendered Preview Panel with non-blocking deferred markdown */}
                 <div
                   style={{ width: `${100 - splitRatio}%` }}
                   className="h-full overflow-hidden"
                 >
                   <MarkdownView
                     ref={mainContentRef}
-                    markdown={markdown}
+                    markdown={deferredMarkdown}
                     zoomLevel={zoomLevel}
                     searchQuery={searchQuery}
+                    theme={theme}
+                    filePath={activeTab?.filePath}
+                    bookmarks={currentBookmarks}
                     onToggleTaskListItem={handleToggleTaskListItem}
+                    onEmbedImage={handleEmbedImageInMarkdown}
                   />
                 </div>
               </div>
@@ -1292,7 +2228,11 @@ export function App() {
                   markdown={markdown}
                   zoomLevel={zoomLevel}
                   searchQuery={searchQuery}
+                  theme={theme}
+                  filePath={activeTab?.filePath}
+                  bookmarks={currentBookmarks}
                   onChangeMarkdown={updateMarkdown}
+                  onEmbedImage={handleEmbedImageInMarkdown}
                 />
               </div>
             ) : viewMode === 'split' ? (
@@ -1305,7 +2245,9 @@ export function App() {
                   <MarkdownSource
                     ref={sourceRef}
                     markdown={markdown}
+                    onChange={updateMarkdown}
                     onScroll={handleSourceScroll}
+                    bookmarks={currentBookmarks}
                   />
                 </div>
 
@@ -1336,18 +2278,22 @@ export function App() {
                   }}
                 />
 
-                {/* Markdown Rendered View Panel */}
+                {/* Markdown Rendered View Panel with non-blocking deferred markdown */}
                 <div
                   style={{ width: `${100 - splitRatio}%` }}
                   className="h-full overflow-hidden"
                 >
                   <MarkdownView
                     ref={mainContentRef}
-                    markdown={markdown}
+                    markdown={deferredMarkdown}
                     zoomLevel={zoomLevel}
                     searchQuery={searchQuery}
+                    theme={theme}
+                    filePath={activeTab?.filePath}
+                    bookmarks={currentBookmarks}
                     onScroll={handleViewScroll}
                     onToggleTaskListItem={handleToggleTaskListItem}
+                    onEmbedImage={handleEmbedImageInMarkdown}
                   />
                 </div>
               </div>
@@ -1358,12 +2304,68 @@ export function App() {
                   markdown={markdown}
                   zoomLevel={zoomLevel}
                   searchQuery={searchQuery}
+                  theme={theme}
+                  filePath={activeTab?.filePath}
+                  bookmarks={currentBookmarks}
                   onToggleTaskListItem={handleToggleTaskListItem}
+                  onEmbedImage={handleEmbedImageInMarkdown}
                 />
               </div>
             )}
           </main>
         </div>
+
+        {/* Custom Context Menu on Right Click */}
+        {contextMenu && contextMenu.visible && (
+          <div
+            style={{ top: `${contextMenu.y}px`, left: `${contextMenu.x}px` }}
+            className="custom-context-menu fixed z-50 min-w-[200px] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xl rounded-xl py-1.5 text-xs text-gray-800 dark:text-gray-200 animate-in fade-in zoom-in-95 duration-100 select-none"
+          >
+            <div className="px-3 py-1.5 border-b border-gray-100 dark:border-gray-700 text-[11px] font-mono text-gray-400 dark:text-gray-500 flex items-center justify-between">
+              <span>위치: Line {contextMenu.targetLineIndex + 1}</span>
+            </div>
+
+            <button
+              onClick={() => {
+                const titlePrompt = contextMenu.selectedText
+                  ? contextMenu.selectedText.slice(0, 30)
+                  : contextMenu.lineText
+                  ? contextMenu.lineText.replace(/^[#\s\-\*\+>\|]+/, '').replace(/[\|]+$/, '').replace(/\|/g, ' ').replace(/\s+/g, ' ').slice(0, 30)
+                  : `Line ${contextMenu.targetLineIndex + 1}`;
+                handleAddBookmark(contextMenu.targetLineIndex, titlePrompt);
+              }}
+              className="w-full px-3 py-2 flex items-center space-x-2 hover:bg-amber-50 dark:hover:bg-amber-950/40 hover:text-amber-600 dark:hover:text-amber-400 text-left transition-colors cursor-pointer font-medium"
+            >
+              <Bookmark size={15} className="text-amber-500 fill-amber-500/20" />
+              <span>이 위치에 책갈피 추가</span>
+            </button>
+
+            {contextMenu.selectedText && (
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(contextMenu.selectedText);
+                  showToast('📋 선택한 텍스트가 복사되었습니다.');
+                  setContextMenu(null);
+                }}
+                className="w-full px-3 py-2 flex items-center space-x-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-left transition-colors cursor-pointer"
+              >
+                <Copy size={14} className="text-gray-400" />
+                <span>선택 영역 텍스트 복사</span>
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                handleConvertSelectionToTask();
+                setContextMenu(null);
+              }}
+              className="w-full px-3 py-2 flex items-center space-x-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-left transition-colors cursor-pointer"
+            >
+              <CheckSquare size={14} className="text-blue-500" />
+              <span>할 일(체크박스)로 변환 (Ctrl+T)</span>
+            </button>
+          </div>
+        )}
 
         <FloatingMenu
           onScrollToTop={handleScrollToTop}
@@ -1391,8 +2393,8 @@ export function App() {
 
         {/* Floating Toast Notification */}
         {toastMessage && (
-          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900 text-white border border-blue-500/70 shadow-2xl px-4 py-2.5 rounded-full text-xs font-bold flex items-center space-x-2 pointer-events-none animate-bounce">
-            <span>{toastMessage}</span>
+          <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900/95 text-white border border-blue-500/70 shadow-2xl px-5 py-3 rounded-2xl text-xs max-w-xl w-auto pointer-events-none animate-in fade-in slide-in-from-bottom-2 duration-200 backdrop-blur-md">
+            <div className="whitespace-pre-line font-medium leading-relaxed break-all font-mono text-center">{toastMessage}</div>
           </div>
         )}
       </div>
